@@ -1,5 +1,7 @@
 import json
-
+import itertools
+import math
+from collections import defaultdict
 
 
 ########################################################################
@@ -29,7 +31,21 @@ class Inference:
         
         Refer to the sample test case for the structure of the input data.
         """
-        pass
+        self.num_vars = data['VariablesCount']
+        self.k = data['k value (int top k)']
+        self.edges = set()
+        self.potentials = {}
+        self.graph = defaultdict(set)
+        for clique_data in data['Cliques and Potentials']:
+            clique = tuple(clique_data['cliques'])
+            self.potentials[clique] = clique_data['potentials']
+            for u in clique:
+                for v in clique:
+                    if u != v:
+                        self.graph[u].add(v)
+                        self.graph[v].add(u)
+        self.junction_tree = {}
+        self.messages = {}
 
     def triangulate_and_get_cliques(self):
         """
@@ -43,7 +59,29 @@ class Inference:
 
         Refer to the problem statement for details on triangulation and clique extraction.
         """
-        pass
+        graph = {node : set(neighbors) for node, neighbors in self.graph.items()}
+        fill_edges = set()
+        while graph:
+            node = min(graph, key = lambda x: len(graph[x]))
+            neighbors = graph[node]
+            for i in range(len(neighbors)):
+                for j in range(i + 1, len(neighbors)):
+                    if neighbors[i] not in graph[neighbors[j]]:
+                        graph[neighbors[i]].add(neighbors[j])
+                        graph[neighbors[j]].add(neighbors[i])
+                        fill_edges.add((neighbors[i], neighbors[j]))
+            del graph[node]
+            for n in neighbors:
+                graph[n].remove(node)
+
+        self.triangulated_cliques = []
+        visited = set()
+        for node in self.graph:
+            clique = {node} | self.graph[node]
+            if tuple(clique) not in visited:
+                self.triangulated_cliques.append(clique)
+                visited.add(tuple(clique))
+
 
     def get_junction_tree(self):
         """
@@ -57,7 +95,13 @@ class Inference:
 
         Refer to the problem statement for details on junction tree construction.
         """
-        pass
+        adjacency_list = defaultdict(set)
+        for i,c1 in enumerate(self.triangulated_cliques):
+            for j,c2 in enumerate(self.triangulated_cliques):
+                if i != j and c1 & c2:
+                    adjacency_list[c1].add(c2)
+                    adjacency_list[c2].add(c1)
+        self.junction_tree = adjacency_list
 
     def assign_potentials_to_cliques(self):
         """
@@ -70,7 +114,16 @@ class Inference:
         
         Refer to the sample test case for how potentials are associated with cliques.
         """
-        pass
+        self.assigned_potentials = {}
+        for clique in self.triangulated_cliques:
+            if clique in self.potentials:
+                self.assigned_potentials[clique] = self.potentials[clique]
+            else:
+                self.assigned_potentials[clique] = [1] * (2 ** len(clique))
+                for existing_clique, potential in self.potentials.items():
+                    if set(existing_clique).issubset(set(clique)):
+                        self.assigned_potentials[clique] = potential
+                        break
 
     def get_z_value(self):
         """
@@ -83,6 +136,7 @@ class Inference:
         
         Refer to the problem statement for details on computing the partition function.
         """
+        
         pass
 
     def compute_marginals(self):
