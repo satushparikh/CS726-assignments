@@ -5,6 +5,7 @@ from collections import defaultdict
 import heapq
 
 
+
 ########################################################################
 
 # Do not install any external packages. You can only use Python's default libraries such as:
@@ -126,23 +127,28 @@ class Inference:
         """
         adjacency_list = defaultdict(set)
         edges = []
+        #  Sets are mutable and thus not hashable and cannot be used as dictionary key. So converting to frozensets
+        self.triangulated_cliques = [frozenset(c) for c in self.triangulated_cliques]
+        # creating weighted clique-graph where edge weights are size of separator sets
         for i, c1 in enumerate(self.triangulated_cliques):
-            for j, c2 in enumerate(self.triangulated_cliques):
-                if i != j and set(c1) & set(c2):
-                    weight = len(set(c1) & set(c2))
+            for j in range(i+1, len(self.triangulated_cliques)):
+                c2 = self.triangulated_cliques[j]
+                separator = set(c1) & set(c2)
+                if separator:
+                    weight = len(separator)
                     edges.append((weight, c1, c2))
                     adjacency_list[c1].add((weight, c2))
                     adjacency_list[c2].add((weight, c1))
         
         self.junction_tree = defaultdict(set)
         if not edges:
-            return
-        
+            raise  ValueError("Edges list coming out empty.")
+        # creating a minimum weight spanning tree using prim's method for clique graph
         start_clique = self.triangulated_cliques[0]
         pq = [(-weight, start_clique, neighbor) for weight, neighbor in adjacency_list[start_clique]]
         heapq.heapify(pq)
         visited = {start_clique}
-        
+        # loop runs until all nodes are added to junction tree
         while pq:
             weight, c1, c2 = heapq.heappop(pq)
             if c2 not in visited:
@@ -152,7 +158,44 @@ class Inference:
                 for w, neighbor in adjacency_list[c2]:
                     if neighbor not in visited:
                         heapq.heappush(pq, (-w, c2, neighbor))
+        self.check_running_intersection_property()
+        
+    def check_running_intersection_property(self):
+        """
+        Check that the junction tree satisfies the Running Intersection Property (RIP):
+        For every variable, the cliques containing that variable should form a connected subgraph.
+        """
+        from collections import defaultdict, deque
 
+        # Build a mapping: variable -> set of cliques that contain the variable.
+        variable_clique_map = defaultdict(set)
+        # Iterate over cliques in the junction tree (keys of the junction_tree dictionary)
+        for clique in self.junction_tree.keys():
+            for var in clique:
+                variable_clique_map[var].add(clique)
+        
+        # For each variable, check if the induced subgraph is connected.
+        for var, cliques in variable_clique_map.items():
+            # If there's only one clique, it's trivially connected.
+            if len(cliques) <= 1:
+                continue
+
+            # Start BFS from an arbitrary clique that contains the variable.
+            start = next(iter(cliques))
+            visited = set()
+            queue = deque([start])
+            
+            while queue:
+                current = queue.popleft()
+                visited.add(current)
+                # Only traverse neighbors that also contain var.
+                for neighbor in self.junction_tree[current]:
+                    if neighbor in cliques and neighbor not in visited:
+                        queue.append(neighbor)
+            
+            if visited != cliques:
+                raise ValueError(f"Running Intersection Property violated for variable: {var}")
+            
     def assign_potentials_to_cliques(self):
         """
         Assign potentials to the cliques in the junction tree.
@@ -253,7 +296,8 @@ class Get_Input_and_Check_Output:
 
 if __name__ == '__main__':
     print("Hello")
-    evaluator = Get_Input_and_Check_Output('Sample_Testcase.json')
+    evaluator = Get_Input_and_Check_Output('Assignment_1\Questionnare\Sample_Testcase.json')
+    # evaluator = Get_Input_and_Check_Output('Sample_Testcase.json')
     evaluator.get_output()
     # evaluator.write_output('Sample_Testcase_Output.json') 
 
