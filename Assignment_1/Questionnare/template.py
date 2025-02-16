@@ -33,7 +33,7 @@ class Inference:
         Refer to the sample test case for the structure of the input data.
         """
         self.num_vars = data['VariablesCount']
-        self.k = data['k value (int top k)']
+        self.k = data['k value (in top k)']
         self.edges = set()
         self.potentials = {}
         self.graph = defaultdict(set)
