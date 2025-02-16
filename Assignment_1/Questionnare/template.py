@@ -39,11 +39,9 @@ class Inference:
         for clique_data in data['Cliques and Potentials']:
             clique = tuple(clique_data['cliques'])
             self.potentials[clique] = clique_data['potentials']
-            for u in clique:
-                for v in clique:
-                    if u != v:
-                        self.graph[u].add(v)
-                        self.graph[v].add(u)
+            for u,v in itertools.combinations(clique,2):
+                self.graph[u].add(v)
+                self.graph[v].add(u)
         self.junction_tree = {}
         self.messages = {}
 
@@ -59,10 +57,13 @@ class Inference:
 
         Refer to the problem statement for details on triangulation and clique extraction.
         """
+        # create a copy of graph to work on
         graph = {node : set(neighbors) for node, neighbors in self.graph.items()}
         fill_edges = set()
+        # Triangulation:Minimum degree greedy heuristic
         while graph:
-            node = min(graph, key = lambda x: len(graph[x]))
+            # pick node with smallest degree
+            node = min(graph, key = lambda x: len(graph[x]))  
             neighbors = graph[node]
             for i in range(len(neighbors)):
                 for j in range(i + 1, len(neighbors)):
@@ -73,7 +74,7 @@ class Inference:
             del graph[node]
             for n in neighbors:
                 graph[n].remove(node)
-
+        
         self.triangulated_cliques = []
         visited = set()
         for node in self.graph:
@@ -202,6 +203,9 @@ class Get_Input_and_Check_Output:
 
 
 if __name__ == '__main__':
+    print("Hello")
     evaluator = Get_Input_and_Check_Output('Sample_Testcase.json')
     evaluator.get_output()
-    evaluator.write_output('Sample_Testcase_Output.json')
+    # evaluator.write_output('Sample_Testcase_Output.json') 
+
+    
