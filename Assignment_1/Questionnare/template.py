@@ -65,24 +65,51 @@ class Inference:
         while graph:
             # pick node with smallest degree
             node = min(graph, key = lambda x: len(graph[x]))  
-            neighbors = graph[node]
+            # convert set to list for indexing
+            neighbors = list(graph[node])
+            
+            # Connect neighbors to form a clique
             for i in range(len(neighbors)):
                 for j in range(i + 1, len(neighbors)):
-                    if neighbors[i] not in graph[neighbors[j]]:
-                        graph[neighbors[i]].add(neighbors[j])
-                        graph[neighbors[j]].add(neighbors[i])
-                        fill_edges.add((neighbors[i], neighbors[j]))
+                    u,v = neighbors[i], neighbors[j]
+                    if v not in graph[u]:
+                        graph[u].add(v)
+                        graph[v].add(u)
+                        fill_edges.add((u, v))
+            # Remove the node from the graph
             del graph[node]
             for n in neighbors:
                 graph[n].remove(node)
+        #  Construct triangulated graph = original graph + fill_edges
+        triangulated_graph = {node: set(neighbors) for node, neighbors in self.graph.items()}
+        for u,v in fill_edges: 
+            triangulated_graph[u].add(v)
+            triangulated_graph[v].add(u)
         
-        self.triangulated_cliques = []
-        visited = set()
-        for node in self.graph:
-            clique = {node} | self.graph[node]
-            if tuple(clique) not in visited:
-                self.triangulated_cliques.append(clique)
-                visited.add(tuple(clique))
+        def bron_kerbosch(R, P, X, cliques):
+            # If there are no more candidates and no excluded nodes,     R is maximal.
+            if not P and not X:
+                cliques.append(R)
+                return
+            # Iterate over a static list of candidates (P) to allow     modifications during iteration.
+            for v in list(P):
+                # Recurse with v added to R, and restrict P and X to neighbors of v.
+                bron_kerbosch(R | {v}, P & triangulated_graph[v],     X & triangulated_graph[v], cliques)
+            # Move v from the candidate set P to the excluded set X.
+                P.remove(v)
+                X.add(v)     
+                
+        cliques = []
+        # Start with an empty clique (R), all nodes as potential (P), and no excluded nodes (X)
+        bron_kerbosch(set(), set(triangulated_graph.keys()), set(), cliques)   
+        self.triangulated_cliques = cliques
+        # self.triangulated_cliques = []
+        # visited = set()
+        # for node in self.graph:
+        #     clique = {node} | self.graph[node]
+        #     if tuple(clique) not in visited:
+        #         self.triangulated_cliques.append(clique)
+        #         visited.add(tuple(clique))
 
 
     def get_junction_tree(self):
