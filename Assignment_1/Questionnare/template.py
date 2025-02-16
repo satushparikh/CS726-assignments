@@ -2,6 +2,7 @@ import json
 import itertools
 import math
 from collections import defaultdict
+import heapq
 
 
 ########################################################################
@@ -97,12 +98,33 @@ class Inference:
         Refer to the problem statement for details on junction tree construction.
         """
         adjacency_list = defaultdict(set)
-        for i,c1 in enumerate(self.triangulated_cliques):
-            for j,c2 in enumerate(self.triangulated_cliques):
-                if i != j and c1 & c2:
-                    adjacency_list[c1].add(c2)
-                    adjacency_list[c2].add(c1)
-        self.junction_tree = adjacency_list
+        edges = []
+        for i, c1 in enumerate(self.triangulated_cliques):
+            for j, c2 in enumerate(self.triangulated_cliques):
+                if i != j and set(c1) & set(c2):
+                    weight = len(set(c1) & set(c2))
+                    edges.append((weight, c1, c2))
+                    adjacency_list[c1].add((weight, c2))
+                    adjacency_list[c2].add((weight, c1))
+        
+        self.junction_tree = defaultdict(set)
+        if not edges:
+            return
+        
+        start_clique = self.triangulated_cliques[0]
+        pq = [(-weight, start_clique, neighbor) for weight, neighbor in adjacency_list[start_clique]]
+        heapq.heapify(pq)
+        visited = {start_clique}
+        
+        while pq:
+            weight, c1, c2 = heapq.heappop(pq)
+            if c2 not in visited:
+                visited.add(c2)
+                self.junction_tree[c1].add(c2)
+                self.junction_tree[c2].add(c1)
+                for w, neighbor in adjacency_list[c2]:
+                    if neighbor not in visited:
+                        heapq.heappush(pq, (-w, c2, neighbor))
 
     def assign_potentials_to_cliques(self):
         """
