@@ -293,89 +293,276 @@ class Inference:
         if len(assignments) != len(flat_list):
             raise ValueError("Number of assignments does not match length of potential list.")
         return dict(zip(assignments, flat_list))
-
     def get_z_value(self):
         """
         Compute the partition function (Z value) of the graphical model.
         
-        - Uses message passing (sum-product algorithm) on the junction tree to compute Z.
-        - Selects a root clique and passes messages bottom-up.
-        - The final belief at the root clique gives the partition function.
+        This method uses message passing (the sum-product algorithm) on the junction tree.
+        It selects an arbitrary root clique and passes messages upward (from the leaves to the root).
+        The final belief at the root (its potential multiplied by all incoming messages) is summed
+        over all assignments to obtain Z.
+        
+        Assumes that:
+          - self.junction_tree is a dictionary mapping each clique (a frozenset) to its neighbor cliques.
+          - self.clique_potentials is a dictionary mapping each clique (a frozenset) to a tuple:
+                (clique_vars, potential_table)
+            where:
+                * clique_vars is a tuple (in sorted order) listing the clique's variables.
+                * potential_table is a dictionary mapping assignments (tuples of 0's/1's of length len(clique_vars))
+                  to their potential value.
         """
-        root = next(iter(self.junction_tree))  # Pick an arbitrary root
+        
+        # This dictionary will hold messages between cliques.
+        # A message from clique A to clique B is stored as messages[(A, B)]
         messages = {}
-
+        
+        # Helper: given an ordering (clique_vars) and a subset of variables,
+        # return the list of indices (in order) at which those variables appear.
+        def get_indices(clique_vars, subset):
+            return [i for i, var in enumerate(clique_vars) if var in subset]
+        
+        # Helper: given an assignment (tuple) and a list of indices,
+        # return the sub-assignment (tuple) corresponding to those indices.
+        def project_assignment(assignment, indices):
+            return tuple(assignment[i] for i in indices)
+        
+        # Compute the message from clique 'from_clique' to clique 'to_clique'
         def send_message(from_clique, to_clique):
-            """Compute the message from one clique to another."""
-            separator = from_clique & to_clique  # Find separator set
-            incoming_potential = self.assigned_potentials[from_clique]
+            # Get the potential for the sending clique.
+            clique_vars, pot_table = self.clique_potentials[from_clique]
             
-            # If there are incoming messages, multiply them
+            # Start with a copy of the original potential.
+            product_factor = {}
+            for assignment, value in pot_table.items():
+                product_factor[assignment] = value
+            
+            # Multiply in all incoming messages to 'from_clique' (except from 'to_clique').
             for neighbor in self.junction_tree[from_clique]:
-                if neighbor != to_clique and (neighbor, from_clique) in messages:
-                    incoming_potential = [
-                        p1 * p2 for p1, p2 in zip(incoming_potential, messages[(neighbor, from_clique)])
-                    ]
+                if neighbor == to_clique:
+                    continue
+                # Expect that a message from neighbor to from_clique has already been computed.
+                if (neighbor, from_clique) in messages:
+                    msg = messages[(neighbor, from_clique)]
+                    # The message is defined on the separator S = from_clique ∩ neighbor.
+                    separator = from_clique & neighbor
+                    indices = get_indices(clique_vars, separator)
+                    # For every assignment of the full clique, multiply by the appropriate message value.
+                    for assignment in product_factor:
+                        proj = project_assignment(assignment, indices)
+                        product_factor[assignment] *= msg[proj]
             
-            # Marginalize out non-separator variables
-            marginalized_potential = [sum(incoming_potential)]  # Sum over all variables
-            messages[(from_clique, to_clique)] = marginalized_potential
-
-        # Perform upward pass (rooted at an arbitrary clique)
-        visited = set()
-
+            # Now marginalize out the variables that are in 'from_clique' but not in the separator S = from_clique ∩ to_clique.
+            separator = from_clique & to_clique
+            indices_to_keep = get_indices(clique_vars, separator)
+            msg_result = {}
+            for assignment, value in product_factor.items():
+                proj = project_assignment(assignment, indices_to_keep)
+                if proj in msg_result:
+                    msg_result[proj] += value
+                else:
+                    msg_result[proj] = value
+            return msg_result
+        
+        # Upward pass: recursively pass messages from leaves to the root.
         def upward_pass(clique, parent=None):
-            """Recursive function to pass messages from leaves to root."""
-            visited.add(clique)
             for neighbor in self.junction_tree[clique]:
-                if neighbor not in visited:
-                    upward_pass(neighbor, clique)
-                    send_message(neighbor, clique)
-
+                if neighbor == parent:
+                    continue
+                upward_pass(neighbor, clique)
+                messages[(neighbor, clique)] = send_message(neighbor, clique)
+        
+        # Select an arbitrary clique as the root.
+        root = next(iter(self.junction_tree))
         upward_pass(root)
-
-        # Z value is the sum of beliefs at the root
-        root_potential = self.assigned_potentials[root]
+        
+        # At the root, compute the final belief by multiplying the clique's own potential with all incoming messages.
+        root_vars, root_pot = self.clique_potentials[root]
+        belief = {}
+        for assignment, value in root_pot.items():
+            belief[assignment] = value
         for neighbor in self.junction_tree[root]:
-            root_potential = [p1 * p2 for p1, p2 in zip(root_potential, messages[(neighbor, root)])]
+            if (neighbor, root) in messages:
+                msg = messages[(neighbor, root)]
+                separator = root & neighbor  # Separator between root and this neighbor.
+                indices = get_indices(root_vars, separator)
+                # Multiply the message into the belief for every assignment of the root clique.
+                for assignment in list(belief.keys()):
+                    proj = project_assignment(assignment, indices)
+                    belief[assignment] *= msg[proj]
+        
+        # The partition function Z is the sum of the belief over all assignments.
+        Z = sum(belief.values())
+        self.Z = Z
+        return Z
 
-        self.Z = sum(root_potential)
-        return self.Z
+    # def get_z_value(self):
+  
+    #     """
+    #     Compute the partition function (Z value) of the graphical model.
+        
+    #     What to do here:
+    #     ----------------
+    #     - Implement the message passing algorithm to compute the partition function (Z value).
+    #     - The Z value is the normalization constant for the probability distribution.
+        
+    #     Refer to the problem statement for details on computing the partition function.
+    #     """
+      
+    #     """
+    #     Compute the partition function (Z value) of the graphical model.
+        
+    #     - Uses message passing (sum-product algorithm) on the junction tree to compute Z.
+    #     - Selects a root clique and passes messages bottom-up.
+    #     - The final belief at the root clique gives the partition function.
+    #     """
+    #     root = next(iter(self.junction_tree))  # Pick an arbitrary root
+    #     messages = {}
 
+    #     def send_message(from_clique, to_clique):
+    #         """Compute the message from one clique to another."""
+    #         separator = from_clique & to_clique  # Find separator set
+    #         incoming_potential = self.assigned_potentials[from_clique]
+            
+    #         # If there are incoming messages, multiply them
+    #         for neighbor in self.junction_tree[from_clique]:
+    #             if neighbor != to_clique and (neighbor, from_clique) in messages:
+    #                 incoming_potential = [
+    #                     p1 * p2 for p1, p2 in zip(incoming_potential, messages[(neighbor, from_clique)])
+    #                 ]
+            
+    #         # Marginalize out non-separator variables
+    #         marginalized_potential = [sum(incoming_potential)]  # Sum over all variables
+    #         messages[(from_clique, to_clique)] = marginalized_potential
+
+    #     # Perform upward pass (rooted at an arbitrary clique)
+    #     visited = set()
+
+    #     def upward_pass(clique, parent=None):
+    #         """Recursive function to pass messages from leaves to root."""
+    #         visited.add(clique)
+    #         for neighbor in self.junction_tree[clique]:
+    #             if neighbor not in visited:
+    #                 upward_pass(neighbor, clique)
+    #                 send_message(neighbor, clique)
+
+    #     upward_pass(root)
+
+    #     # Z value is the sum of beliefs at the root
+    #     root_potential = self.assigned_potentials[root]
+    #     for neighbor in self.junction_tree[root]:
+    #         root_potential = [p1 * p2 for p1, p2 in zip(root_potential, messages[(neighbor, root)])]
+
+    #     self.Z = sum(root_potential)
+    #     return self.Z
+
+    # def compute_marginals(self):
+    #     """
+    #     Compute the marginal probabilities for all variables.
+        
+    #     - Uses message passing (sum-product algorithm) to compute marginals.
+    #     - Each variable's marginal is obtained by summing over all assignments in relevant cliques.
+    #     """
+    #     marginals = {var: [0, 0] for var in range(self.num_vars)}  # Assuming binary variables (0,1)
+        
+    #     # Compute beliefs for each clique
+    #     clique_beliefs = {}
+    #     for clique in self.triangulated_cliques:
+    #         belief = self.assigned_potentials[clique]
+    #         for neighbor in self.junction_tree[clique]:
+    #             if (neighbor, clique) in self.messages:
+    #                 belief = [p1 * p2 for p1, p2 in zip(belief, self.messages[(neighbor, clique)])]
+    #         clique_beliefs[clique] = belief
+        
+    #     # Compute marginals for each variable
+    #     for var in range(self.num_vars):
+    #         marginal = [0, 0]
+    #         for clique, belief in clique_beliefs.items():
+    #             if var in clique:
+    #                 marginal[0] += belief[0]  # Probability of 0
+    #                 marginal[1] += belief[1]  # Probability of 1
+            
+    #         # Normalize
+    #         total = marginal[0] + marginal[1]
+    #         if total > 0:
+    #             marginal[0] /= total
+    #             marginal[1] /= total
+            
+    #         marginals[var] = marginal
+        
+    #     return [marginals[i] for i in range(self.num_vars)]
     def compute_marginals(self):
         """
-        Compute the marginal probabilities for all variables.
+        Compute the marginal probabilities for all variables in the graphical model.
         
-        - Uses message passing (sum-product algorithm) to compute marginals.
-        - Each variable's marginal is obtained by summing over all assignments in relevant cliques.
+        Assumes:
+          - self.clique_potentials is a dict mapping each clique (a frozenset) to a tuple:
+                (clique_vars, potential_table)
+            where:
+                * clique_vars is a tuple (in sorted order) listing the clique's variables.
+                * potential_table is a dictionary mapping assignments (tuples of 0's/1's) to values.
+          - self.junction_tree maps each clique to its neighbor cliques.
+          - self.messages is a dict containing messages from one clique to another as computed by
+            your message passing algorithm.
+        
+        Returns:
+          A list of marginals (one per variable, in order from variable 0 to num_vars-1),
+          where each marginal is a list of two numbers (the probability of 0 and 1, respectively).
         """
-        marginals = {var: [0, 0] for var in range(self.num_vars)}  # Assuming binary variables (0,1)
-        
-        # Compute beliefs for each clique
-        clique_beliefs = {}
+        # First, compute the "belief" for each clique by multiplying its assigned potential
+        # with all incoming messages (i.e. messages from neighbors directed to this clique).
+        clique_beliefs = {}  # Will map clique -> (clique_vars, belief_table)
         for clique in self.triangulated_cliques:
-            belief = self.assigned_potentials[clique]
+            # Get the original potential for this clique.
+            clique_vars, pot = self.clique_potentials[clique]
+            # Make a copy of the potential table (belief will be updated by multiplying messages).
+            belief = {assignment: value for assignment, value in pot.items()}
+            
+            # Multiply in all incoming messages (from every neighbor of 'clique').
             for neighbor in self.junction_tree[clique]:
+                # Message should be from neighbor to clique.
                 if (neighbor, clique) in self.messages:
-                    belief = [p1 * p2 for p1, p2 in zip(belief, self.messages[(neighbor, clique)])]
-            clique_beliefs[clique] = belief
+                    msg = self.messages[(neighbor, clique)]
+                    # The separator is the intersection of the two cliques.
+                    separator = clique & neighbor
+                    # Determine the positions (indices) in clique_vars corresponding to the separator.
+                    indices = [i for i, var in enumerate(clique_vars) if var in separator]
+                    
+                    # For each full assignment in the clique's belief, project to the separator
+                    # and multiply in the message value.
+                    for assignment in belief:
+                        # Project assignment onto separator (preserving the order from clique_vars).
+                        proj = tuple(assignment[i] for i in indices)
+                        belief[assignment] *= msg[proj]
+            clique_beliefs[clique] = (clique_vars, belief)
         
-        # Compute marginals for each variable
+        # Now compute the marginal for each variable.
+        # Because of the running intersection property, we can pick any clique that contains the variable.
+        marginals = {}
         for var in range(self.num_vars):
-            marginal = [0, 0]
-            for clique, belief in clique_beliefs.items():
+            marginal_counts = {0: 0, 1: 0}
+            found = False
+            # Iterate over cliques until one is found that contains 'var'
+            for clique, (clique_vars, belief) in clique_beliefs.items():
                 if var in clique:
-                    marginal[0] += belief[0]  # Probability of 0
-                    marginal[1] += belief[1]  # Probability of 1
-            
-            # Normalize
-            total = marginal[0] + marginal[1]
+                    # Determine the index of var in the clique's ordering.
+                    var_index = clique_vars.index(var)
+                    # Sum over all assignments in the belief that assign 0 or 1 to var.
+                    for assignment, value in belief.items():
+                        # assignment is a tuple of 0's and 1's for all variables in the clique.
+                        marginal_counts[assignment[var_index]] += value
+                    found = True
+                    break
+            if not found:
+                raise ValueError(f"Variable {var} not found in any clique.")
+            # Normalize the marginal so that the probabilities sum to 1.
+            total = marginal_counts[0] + marginal_counts[1]
             if total > 0:
-                marginal[0] /= total
-                marginal[1] /= total
-            
+                marginal = [marginal_counts[0] / total, marginal_counts[1] / total]
+            else:
+                marginal = [0.0, 0.0]
             marginals[var] = marginal
         
+        # Return the marginals as a list (ordered by variable number).
         return [marginals[i] for i in range(self.num_vars)]
 
     def compute_top_k(self):
