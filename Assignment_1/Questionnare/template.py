@@ -46,6 +46,30 @@ class Inference:
                 self.graph[v].add(u)
         self.junction_tree = {}
         self.messages = {}
+    # def assign_potentials_to_cliques(self):
+    #     """
+    #     Assign potentials to the cliques in the junction tree.
+        
+    #     - Map the given potentials from the input data to the corresponding cliques in the junction tree.
+    #     - If multiple factors belong to the same clique, multiply them element-wise.
+    #     - If a clique has no assigned factor, initialize its potential to [1] (neutral element for multiplication).
+    #     """
+    #     # Initialize clique potentials
+    #     self.clique_potentials = {}
+        
+    #     for clique in self.junction_tree:
+    #         # Start with a neutral potential of [1] (list form for element-wise multiplication)
+    #         potential = [1]
+            
+    #         # Multiply all potentials assigned to this clique (element-wise)
+    #         for assigned_clique, assigned_potential in self.potentials.items():
+    #             if set(assigned_clique).issubset(clique):
+    #                 if len(potential) == 1:
+    #                     potential = assigned_potential  # Initialize from first potential
+    #                 else:
+    #                     potential = [a * b for a, b in zip(potential, assigned_potential)]
+            
+    #         self.clique_potentials[clique] = potential
 
     def triangulate_and_get_cliques(self):
         """
@@ -104,14 +128,6 @@ class Inference:
         # Start with an empty clique (R), all nodes as potential (P), and no excluded nodes (X)
         bron_kerbosch(set(), set(triangulated_graph.keys()), set(), cliques)   
         self.triangulated_cliques = cliques
-        # self.triangulated_cliques = []
-        # visited = set()
-        # for node in self.graph:
-        #     clique = {node} | self.graph[node]
-        #     if tuple(clique) not in visited:
-        #         self.triangulated_cliques.append(clique)
-        #         visited.add(tuple(clique))
-
 
     def get_junction_tree(self):
         """
