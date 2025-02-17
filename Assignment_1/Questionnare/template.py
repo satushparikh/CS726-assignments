@@ -40,36 +40,21 @@ class Inference:
         self.graph = defaultdict(set)
         for clique_data in data['Cliques and Potentials']:
             clique = tuple(clique_data['cliques'])
-            self.potentials[clique] = clique_data['potentials']
+            clique_potential = clique_data['potentials']
+            if clique in self.potentials :
+                # Element wise multiplication of previously stored and current 'clique_potnetial'
+                self.potentials[clique] = [
+                    x*y for x,y in zip(self.potentials[clique],clique_potential)
+                ]
+            else:
+                self.potentials[clique] = clique_potential
+                
+            # Update the graph edges based on cliques stored
             for u,v in itertools.combinations(clique,2):
                 self.graph[u].add(v)
                 self.graph[v].add(u)
         self.junction_tree = {}
         self.messages = {}
-    # def assign_potentials_to_cliques(self):
-    #     """
-    #     Assign potentials to the cliques in the junction tree.
-        
-    #     - Map the given potentials from the input data to the corresponding cliques in the junction tree.
-    #     - If multiple factors belong to the same clique, multiply them element-wise.
-    #     - If a clique has no assigned factor, initialize its potential to [1] (neutral element for multiplication).
-    #     """
-    #     # Initialize clique potentials
-    #     self.clique_potentials = {}
-        
-    #     for clique in self.junction_tree:
-    #         # Start with a neutral potential of [1] (list form for element-wise multiplication)
-    #         potential = [1]
-            
-    #         # Multiply all potentials assigned to this clique (element-wise)
-    #         for assigned_clique, assigned_potential in self.potentials.items():
-    #             if set(assigned_clique).issubset(clique):
-    #                 if len(potential) == 1:
-    #                     potential = assigned_potential  # Initialize from first potential
-    #                 else:
-    #                     potential = [a * b for a, b in zip(potential, assigned_potential)]
-            
-    #         self.clique_potentials[clique] = potential
 
     def triangulate_and_get_cliques(self):
         """
@@ -145,6 +130,10 @@ class Inference:
         edges = []
         #  Sets are mutable and thus not hashable and cannot be used as dictionary key. So converting to frozensets
         self.triangulated_cliques = [frozenset(c) for c in self.triangulated_cliques]
+        if len(self.triangulated_cliques) == 1:
+            self.junction_tree[self.triangulated_cliques[0]] = set()
+            return
+
         # creating weighted clique-graph where edge weights are size of separator sets
         for i, c1 in enumerate(self.triangulated_cliques):
             for j in range(i+1, len(self.triangulated_cliques)):
@@ -159,7 +148,7 @@ class Inference:
         self.junction_tree = defaultdict(set)
         if not edges:
             raise  ValueError("Edges list coming out empty.")
-        # creating a minimum weight spanning tree using prim's method for clique graph
+        # creating a Maximum weight spanning tree using prim's method for clique graph
         start_clique = self.triangulated_cliques[0]
         pq = [(-weight, start_clique, neighbor) for weight, neighbor in adjacency_list[start_clique]]
         heapq.heapify(pq)
@@ -223,16 +212,87 @@ class Inference:
         
         Refer to the sample test case for how potentials are associated with cliques.
         """
-        self.assigned_potentials = {}
+        """
+        For each triangulated clique, build a clique potential by iterating over all
+        2**n binary assignments (n = number of nodes in the clique). For each clique,
+        multiply in the contribution from each factor (from self.potentials) that is
+        completely contained in the clique and that has not yet contributed to any other clique.
+        
+        The resulting clique potential is stored as a pair:
+        (clique_vars, potential_table)
+        where:
+        - clique_vars is a tuple (in sorted order) of the clique’s nodes, and
+        - potential_table is a dictionary mapping each assignment (a tuple of 0's and 1's)
+            to its computed potential value.
+        """
+        # 1. Initialize a set to keep track of factors that have already been assigned.
+        assigned_factors = set()  # We store each factor as a canonical (sorted) tuple.
+        
+        # 2. Prepare a dictionary to hold the final potential for each clique.
+        self.clique_potentials = {}  # Each key will be a clique (e.g., a frozenset), mapping to its (clique_vars, potential_table)
+        
+        # 3. Iterate over each triangulated clique.
+        #    Assume self.triangulated_cliques is a list of cliques, each represented as a set of variables.
         for clique in self.triangulated_cliques:
-            if clique in self.potentials:
-                self.assigned_potentials[clique] = self.potentials[clique]
-            else:
-                self.assigned_potentials[clique] = [1] * (2 ** len(clique))
-                for existing_clique, potential in self.potentials.items():
-                    if set(existing_clique).issubset(set(clique)):
-                        self.assigned_potentials[clique] = potential
-                        break
+            # a. Convert the clique into a canonical, sorted tuple.
+            clique_vars = tuple(sorted(clique))
+            n = len(clique_vars)  # Number of variables (nodes) in the clique.
+            
+            # b. Initialize the clique's potential table.
+            #    Since each variable is binary, there are 2**n possible assignments.
+            potential_table = {}
+            for assignment in itertools.product(range(2), repeat=n):
+                potential_table[assignment] = 1  # Start with 1 (multiplicative identity).
+            
+            # c. For each factor in the provided potentials...
+            for factor, flat_list in self.potentials.items():
+                # Convert the factor to its canonical (sorted) form.
+                canonical_factor = tuple(sorted(factor))
+                # Check if this factor's variables are all in the current clique and it hasn't been used yet.
+                if set(factor).issubset(clique) and canonical_factor not in assigned_factors:
+                    # Mark this factor as assigned so it won't be used in another clique.
+                    assigned_factors.add(canonical_factor)
+                    
+                    # Convert the flat list of potential values into a dictionary keyed by assignments.
+                    factor_table = self.factor_from_list(canonical_factor, flat_list)
+                    
+                    # Determine, for each variable in the factor, its index within the clique_vars.
+                    indices = [clique_vars.index(var) for var in canonical_factor]
+                    
+                    # d. For every assignment in the clique's table, multiply in the factor's contribution.
+                    for clique_assignment in potential_table:
+                        # Extract the sub-assignment corresponding to the factor's variables.
+                        sub_assignment = tuple(clique_assignment[i] for i in indices)
+                        # Multiply the factor's value into the current clique potential.
+                        potential_table[clique_assignment] *= factor_table[sub_assignment]
+            
+            # e. Save the computed potential for this clique.
+            self.clique_potentials[clique] = (clique_vars, potential_table)
+            
+        unassigned_factors = set(self.potentials.keys()) - assigned_factors
+        if unassigned_factors:
+            raise ValueError(f"Some factors were not assigned to any clique: {unassigned_factors}")
+
+    def factor_from_list(self, factor_vars, flat_list):
+        """
+        Convert a flat list representation of a factor into a dictionary mapping assignments to values.
+        
+        Parameters:
+        - factor_vars: A tuple (in canonical order) of variables in the factor.
+        - flat_list: A flat list of potential values (assumed to be in lexicographic order
+                    over all assignments to factor_vars, with each variable binary).
+        
+        Returns:
+        A dictionary mapping each assignment (a tuple of 0's and 1's) to its potential value.
+        
+        For example, if factor_vars is (1,2) then there will be 2**2 = 4 entries.
+        """
+        m = len(factor_vars)
+        # Create all possible binary assignments for m variables.
+        assignments = list(itertools.product(range(2), repeat=m))
+        if len(assignments) != len(flat_list):
+            raise ValueError("Number of assignments does not match length of potential list.")
+        return dict(zip(assignments, flat_list))
 
     def get_z_value(self):
         """
@@ -409,4 +469,3 @@ if __name__ == '__main__':
     evaluator.get_output()
     # evaluator.write_output('Sample_Testcase_Output.json') 
 
-    
