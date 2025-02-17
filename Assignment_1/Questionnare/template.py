@@ -222,41 +222,133 @@ class Inference:
         """
         Compute the partition function (Z value) of the graphical model.
         
-        What to do here:
-        ----------------
-        - Implement the message passing algorithm to compute the partition function (Z value).
-        - The Z value is the normalization constant for the probability distribution.
-        
-        Refer to the problem statement for details on computing the partition function.
+        - Uses message passing (sum-product algorithm) on the junction tree to compute Z.
+        - Selects a root clique and passes messages bottom-up.
+        - The final belief at the root clique gives the partition function.
         """
-        
-        pass
+        root = next(iter(self.junction_tree))  # Pick an arbitrary root
+        messages = {}
+
+        def send_message(from_clique, to_clique):
+            """Compute the message from one clique to another."""
+            separator = from_clique & to_clique  # Find separator set
+            incoming_potential = self.assigned_potentials[from_clique]
+            
+            # If there are incoming messages, multiply them
+            for neighbor in self.junction_tree[from_clique]:
+                if neighbor != to_clique and (neighbor, from_clique) in messages:
+                    incoming_potential = [
+                        p1 * p2 for p1, p2 in zip(incoming_potential, messages[(neighbor, from_clique)])
+                    ]
+            
+            # Marginalize out non-separator variables
+            marginalized_potential = [sum(incoming_potential)]  # Sum over all variables
+            messages[(from_clique, to_clique)] = marginalized_potential
+
+        # Perform upward pass (rooted at an arbitrary clique)
+        visited = set()
+
+        def upward_pass(clique, parent=None):
+            """Recursive function to pass messages from leaves to root."""
+            visited.add(clique)
+            for neighbor in self.junction_tree[clique]:
+                if neighbor not in visited:
+                    upward_pass(neighbor, clique)
+                    send_message(neighbor, clique)
+
+        upward_pass(root)
+
+        # Z value is the sum of beliefs at the root
+        root_potential = self.assigned_potentials[root]
+        for neighbor in self.junction_tree[root]:
+            root_potential = [p1 * p2 for p1, p2 in zip(root_potential, messages[(neighbor, root)])]
+
+        self.Z = sum(root_potential)
+        return self.Z
 
     def compute_marginals(self):
         """
-        Compute the marginal probabilities for all variables in the graphical model.
+        Compute the marginal probabilities for all variables.
         
-        What to do here:
-        ----------------
-        - Use the message passing algorithm to compute the marginal probabilities for each variable.
-        - Return the marginals as a list of lists, where each inner list contains the probabilities for a variable.
-        
-        Refer to the sample test case for the expected format of the marginals.
+        - Uses message passing (sum-product algorithm) to compute marginals.
+        - Each variable's marginal is obtained by summing over all assignments in relevant cliques.
         """
-        pass
+        marginals = {var: [0, 0] for var in range(self.num_vars)}  # Assuming binary variables (0,1)
+        
+        # Compute beliefs for each clique
+        clique_beliefs = {}
+        for clique in self.triangulated_cliques:
+            belief = self.assigned_potentials[clique]
+            for neighbor in self.junction_tree[clique]:
+                if (neighbor, clique) in self.messages:
+                    belief = [p1 * p2 for p1, p2 in zip(belief, self.messages[(neighbor, clique)])]
+            clique_beliefs[clique] = belief
+        
+        # Compute marginals for each variable
+        for var in range(self.num_vars):
+            marginal = [0, 0]
+            for clique, belief in clique_beliefs.items():
+                if var in clique:
+                    marginal[0] += belief[0]  # Probability of 0
+                    marginal[1] += belief[1]  # Probability of 1
+            
+            # Normalize
+            total = marginal[0] + marginal[1]
+            if total > 0:
+                marginal[0] /= total
+                marginal[1] /= total
+            
+            marginals[var] = marginal
+        
+        return [marginals[i] for i in range(self.num_vars)]
 
     def compute_top_k(self):
         """
         Compute the top-k most probable assignments in the graphical model.
         
-        What to do here:
-        ----------------
-        - Use the message passing algorithm to find the top-k assignments with the highest probabilities.
-        - Return the assignments along with their probabilities in the specified format.
-        
-        Refer to the sample test case for the expected format of the top-k assignments.
+        - Uses max-product message passing.
+        - Selects k highest probability assignments from the joint distribution.
         """
-        pass
+        root = next(iter(self.junction_tree))  # Pick an arbitrary root
+        messages = {}
+
+        def send_max_message(from_clique, to_clique):
+            """Compute the max-product message."""
+            separator = from_clique & to_clique  # Find separator set
+            incoming_potential = self.assigned_potentials[from_clique]
+            
+            for neighbor in self.junction_tree[from_clique]:
+                if neighbor != to_clique and (neighbor, from_clique) in messages:
+                    incoming_potential = [
+                        p1 * p2 for p1, p2 in zip(incoming_potential, messages[(neighbor, from_clique)])
+                    ]
+            
+            # Maximize over non-separator variables
+            max_potential = max(incoming_potential)
+            messages[(from_clique, to_clique)] = [max_potential]
+
+        # Perform upward max-product pass
+        visited = set()
+
+        def upward_pass(clique, parent=None):
+            """Recursive function to pass max-product messages from leaves to root."""
+            visited.add(clique)
+            for neighbor in self.junction_tree[clique]:
+                if neighbor not in visited:
+                    upward_pass(neighbor, clique)
+                    send_max_message(neighbor, clique)
+
+        upward_pass(root)
+
+        # Compute final beliefs at root
+        root_belief = self.assigned_potentials[root]
+        for neighbor in self.junction_tree[root]:
+            root_belief = [p1 * p2 for p1, p2 in zip(root_belief, messages[(neighbor, root)])]
+
+        # Find top-k assignments
+        top_k = heapq.nlargest(self.k, enumerate(root_belief), key=lambda x: x[1])
+
+        return [{"assignment": idx, "probability": prob} for idx, prob in top_k]
 
 
 
