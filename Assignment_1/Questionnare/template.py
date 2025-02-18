@@ -466,75 +466,192 @@ class Inference:
 
         return marginals
 
+    # def compute_top_k(self):
+    #     """
+    #     Compute the top-k most probable assignments in the graphical model.
+        
+    #     This method computes the joint probability for each full assignment
+    #     over all variables (using the original factors in self.potentials), and then
+    #     selects the top k assignments with the highest (unnormalized) probabilities.
+        
+    #     Returns:
+    #         A list of tuples [(assignment_dict, joint_probability), ...] for the top k assignments,
+    #         sorted in descending order of probability.
+    #     """
+    #     import itertools
+        
+    #     # -------------------------------------------------------------------------
+    #     # 1. Get the full set of variables in the model.
+    #     #    We derive these from the clique potentials (each clique has a tuple of variables).
+    #     # -------------------------------------------------------------------------
+    #     all_vars = sorted({var for clique, (clique_vars, _) in self.clique_potentials.items() 
+    #                     for var in clique_vars})
+        
+    #     # -------------------------------------------------------------------------
+    #     # 2. Precompute factor tables for all factors.
+    #     #    self.potentials is a dictionary mapping a factor (as a tuple of variables)
+    #     #    to its flat list of potential values. We convert each into a dictionary mapping
+    #     #    assignments (tuples) to values using self.factor_from_list.
+    #     #    We use a canonical (i.e., sorted) ordering for factor variables.
+    #     # -------------------------------------------------------------------------
+    #     factor_tables = {}
+    #     for factor, flat_list in self.potentials.items():
+    #         # Get the canonical (sorted) ordering for the factor variables.
+    #         factor_vars = tuple(sorted(factor))
+    #         factor_tables[factor_vars] = self.factor_from_list(factor_vars, flat_list)
+        
+    #     # -------------------------------------------------------------------------
+    #     # 3. Enumerate all full assignments over the variables.
+    #     #    We assume binary variables (0 and 1) so there are 2^(|all_vars|) assignments.
+    #     # -------------------------------------------------------------------------
+    #     all_assignments = list(itertools.product([0, 1], repeat=len(all_vars)))
+        
+    #     # -------------------------------------------------------------------------
+    #     # 4. Compute the joint (unnormalized) probability for each full assignment.
+    #     #    The joint probability is proportional to the product over all factors:
+    #     #         P(x) ∝ ∏_{f in factors} φ_f(x_f)
+    #     #    where x_f is the projection of the full assignment onto the factor's variables.
+    #     # -------------------------------------------------------------------------
+    #     assignment_probs = []
+    #     for assignment in all_assignments:
+    #         # Build a dictionary mapping each variable to its assigned value.
+    #         assign_dict = dict(zip(all_vars, assignment))
+    #         joint_prob = 1.0
+            
+    #         # Multiply in the contribution from each factor.
+    #         for factor_vars, table in factor_tables.items():
+    #             # Extract the sub-assignment for the current factor, in the canonical order.
+    #             sub_assignment = tuple(assign_dict[var] for var in factor_vars)
+    #             joint_prob *= table[sub_assignment]
+            
+    #         assignment_probs.append((assign_dict, joint_prob))
+        
+    #     # -------------------------------------------------------------------------
+    #     # 5. Sort all assignments in descending order of joint probability,
+    #     #    and select the top k assignments.
+    #     # -------------------------------------------------------------------------
+    #     assignment_probs.sort(key=lambda x: x[1], reverse=True)
+    #     top_k = assignment_probs[:self.k]
+        
+    #     return top_k
     def compute_top_k(self):
         """
-        Compute the top-k most probable assignments in the graphical model.
-        
-        This method computes the joint probability for each full assignment
-        over all variables (using the original factors in self.potentials), and then
-        selects the top k assignments with the highest (unnormalized) probabilities.
-        
+        Compute the top-k most probable assignments in the graphical model using a max-product 
+        (k-best) message passing algorithm on the junction tree.
+
+        Instead of summing over assignments (as in the sum-product algorithm), this method 
+        uses maximization and, at each clique, retains the top-k candidate assignments along 
+        with backpointers. After an upward pass from the leaves to the root, a downward 
+        backtracking pass reconstructs the full assignments.
+
         Returns:
             A list of tuples [(assignment_dict, joint_probability), ...] for the top k assignments,
-            sorted in descending order of probability.
+            sorted in descending order of (unnormalized) joint probability.
         """
-        import itertools
-        
-        # -------------------------------------------------------------------------
-        # 1. Get the full set of variables in the model.
-        #    We derive these from the clique potentials (each clique has a tuple of variables).
-        # -------------------------------------------------------------------------
-        all_vars = sorted({var for clique, (clique_vars, _) in self.clique_potentials.items() 
-                        for var in clique_vars})
-        
-        # -------------------------------------------------------------------------
-        # 2. Precompute factor tables for all factors.
-        #    self.potentials is a dictionary mapping a factor (as a tuple of variables)
-        #    to its flat list of potential values. We convert each into a dictionary mapping
-        #    assignments (tuples) to values using self.factor_from_list.
-        #    We use a canonical (i.e., sorted) ordering for factor variables.
-        # -------------------------------------------------------------------------
-        factor_tables = {}
-        for factor, flat_list in self.potentials.items():
-            # Get the canonical (sorted) ordering for the factor variables.
-            factor_vars = tuple(sorted(factor))
-            factor_tables[factor_vars] = self.factor_from_list(factor_vars, flat_list)
-        
-        # -------------------------------------------------------------------------
-        # 3. Enumerate all full assignments over the variables.
-        #    We assume binary variables (0 and 1) so there are 2^(|all_vars|) assignments.
-        # -------------------------------------------------------------------------
-        all_assignments = list(itertools.product([0, 1], repeat=len(all_vars)))
-        
-        # -------------------------------------------------------------------------
-        # 4. Compute the joint (unnormalized) probability for each full assignment.
-        #    The joint probability is proportional to the product over all factors:
-        #         P(x) ∝ ∏_{f in factors} φ_f(x_f)
-        #    where x_f is the projection of the full assignment onto the factor's variables.
-        # -------------------------------------------------------------------------
-        assignment_probs = []
-        for assignment in all_assignments:
-            # Build a dictionary mapping each variable to its assigned value.
-            assign_dict = dict(zip(all_vars, assignment))
-            joint_prob = 1.0
-            
-            # Multiply in the contribution from each factor.
-            for factor_vars, table in factor_tables.items():
-                # Extract the sub-assignment for the current factor, in the canonical order.
-                sub_assignment = tuple(assign_dict[var] for var in factor_vars)
-                joint_prob *= table[sub_assignment]
-            
-            assignment_probs.append((assign_dict, joint_prob))
-        
-        # -------------------------------------------------------------------------
-        # 5. Sort all assignments in descending order of joint probability,
-        #    and select the top k assignments.
-        # -------------------------------------------------------------------------
-        assignment_probs.sort(key=lambda x: x[1], reverse=True)
-        top_k = assignment_probs[:self.k]
-        
-        return top_k
+        k = self.k
+        # --- Helper functions ---
+        def get_indices(clique_vars, subset):
+            # Returns the list of indices at which variables from 'subset' appear in clique_vars.
+            return [i for i, var in enumerate(clique_vars) if var in subset]
 
+        def project_assignment(assignment, indices):
+            # Given an assignment tuple and a list of indices, return the sub-assignment.
+            return tuple(assignment[i] for i in indices)
+
+        # --- Upward pass ---
+        # For each clique, we compute candidates for the joint assignment on that clique’s variables 
+        # (combined with all its subtree) and then “send a message” to its parent by marginalizing 
+        # out the variables not in the separator.
+        # Each candidate is a triple (score, assignment, backpointers) where:
+        #   - score is the joint potential (product of factors) up to that clique,
+        #   - assignment is a tuple giving the assignment to the clique's variables,
+        #   - backpointers is a dict mapping a child clique to the candidate (assignment, bp) chosen there.
+        def upward_pass_top_k(clique, parent=None):
+            # Get the children (neighbors except the parent)
+            children = [nbr for nbr in self.junction_tree[clique] if nbr != parent]
+            clique_vars, pot_table = self.clique_potentials[clique]
+            
+            # Initialize candidates for this clique using its own potential.
+            candidates = []
+            for assignment, value in pot_table.items():
+                candidates.append((value, assignment, {}))
+            
+            # Incorporate each child's message.
+            for child in children:
+                # Recursively compute the child's message (a dict mapping separator assignments
+                # to a list of candidate tuples from the child's subtree).
+                child_msg = upward_pass_top_k(child, clique)
+                # The separator is the intersection of the current clique and the child.
+                separator = clique & child
+                indices = get_indices(clique_vars, separator)
+                new_candidates = []
+                for cand in candidates:
+                    score, assignment, bp = cand
+                    proj = project_assignment(assignment, indices)
+                    # Only if the child sent a message for this separator assignment do we combine.
+                    if proj in child_msg:
+                        # For each candidate coming from the child, update the score and store backpointer.
+                        for child_cand in child_msg[proj]:
+                            child_score, child_assignment, child_bp = child_cand
+                            combined_score = score * child_score  # Multiply the potentials.
+                            new_bp = bp.copy()
+                            new_bp[child] = (child_assignment, child_bp)
+                            new_candidates.append((combined_score, assignment, new_bp))
+                # Retain only the top-k candidates (sorted in descending order of score).
+                candidates = sorted(new_candidates, key=lambda x: x[0], reverse=True)[:k]
+
+            # If there is a parent, send a message to it by marginalizing out variables not in the separator.
+            if parent is not None:
+                separator = clique & parent
+                indices = get_indices(clique_vars, separator)
+                msg = {}
+                for cand in candidates:
+                    score, assignment, bp = cand
+                    proj = project_assignment(assignment, indices)
+                    entry = (score, assignment, bp)
+                    msg.setdefault(proj, []).append(entry)
+                # For each projection (separator assignment), keep only the top-k candidates.
+                for proj in msg:
+                    msg[proj] = sorted(msg[proj], key=lambda x: x[0], reverse=True)[:k]
+                return msg
+            else:
+                # At the root, return the list of candidates.
+                return sorted(candidates, key=lambda x: x[0], reverse=True)[:k]
+
+        # --- Downward (backtracking) pass ---
+        # Given a candidate for a clique, use its stored backpointers to recursively reconstruct 
+        # the full assignment over all variables.
+        def reconstruct_assignment(clique, candidate, parent=None):
+            # candidate is a tuple (assignment, backpointers)
+            full_assignment = {}
+            clique_vars, _ = self.clique_potentials[clique]
+            assignment = candidate[0]
+            # Record the assignment for the clique's variables.
+            for var, val in zip(clique_vars, assignment):
+                full_assignment[var] = val
+            # Recurse into children.
+            for child in self.junction_tree[clique]:
+                if child == parent:
+                    continue
+                if child in candidate[1]:
+                    child_candidate = candidate[1][child]  # (child_assignment, child_backpointers)
+                    child_full_assignment = reconstruct_assignment(child, child_candidate, parent=clique)
+                    full_assignment.update(child_full_assignment)
+            return full_assignment
+
+        # --- Run the algorithm ---
+        # Select an arbitrary clique as the root.
+        root = next(iter(self.junction_tree))
+        # Perform the upward pass to compute top-k candidates at the root.
+        top_candidates = upward_pass_top_k(root, parent=None)
+        # Each candidate is (score, assignment, backpointers) for the root clique.
+        results = []
+        for score, assignment, bp in top_candidates:
+            full_assign = reconstruct_assignment(root, (assignment, bp), parent=None)
+            results.append((full_assign, score))
+        # Sort the results (they should already be sorted, but we sort to be sure).
+        results = sorted(results, key=lambda x: x[1], reverse=True)
+        return results
     # def compute_top_k(self):
     #     """
     #     Compute the top-k most probable assignments in the graphical model.
@@ -621,10 +738,10 @@ class Get_Input_and_Check_Output:
 
 if __name__ == '__main__':
     print("Hello")
-    evaluator = Get_Input_and_Check_Output('Assignment_1\Questionnare\Sample_Testcase.json')
-    # evaluator = Get_Input_and_Check_Output('Assignment_1\Questionnare\samp_test1.json')
-    # evaluator = Get_Input_and_Check_Output('Assignment_1\Questionnare\samp_test5.json')
+    # evaluator = Get_Input_and_Check_Output('Assignment_1\Questionnare\Sample_Testcase.json')
+    # evaluator = Get_Input_and_Check_Output('Assignment_1\Questionnare\samp_test2.json')
+    evaluator = Get_Input_and_Check_Output('Assignment_1\Questionnare\samp_test3.json')
     # evaluator = Get_Input_and_Check_Output('Sample_Testcase.json')
     evaluator.get_output()
-    # evaluator.write_output('Sample_Testcase_Output.json') 
+    evaluator.write_output('Sample_Testcase_Output.json') 
 
