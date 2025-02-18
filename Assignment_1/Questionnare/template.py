@@ -466,154 +466,122 @@ class Inference:
 
         return marginals
 
-    # def compute_marginals(self):
-    #     """
-    #     Compute the marginal probabilities for all variables in the graphical model.
-        
-    #     Assumes:
-    #     - self.clique_potentials is a dict mapping each clique (a frozenset) to a tuple:
-    #             (clique_vars, potential_table)
-    #         where:
-    #             * clique_vars is a tuple (in sorted order) listing the clique's variables.
-    #             * potential_table is a dictionary mapping assignments (tuples of 0's/1's) to values.
-    #     - self.junction_tree maps each clique to its neighbor cliques.
-    #     - self.messages is a dict containing messages between cliques as computed by message passing.
-        
-    #     Returns:
-    #     A list of marginals (one per variable, in order from variable 0 to num_vars-1),
-    #     where each marginal is a list of two numbers: [P(variable=0), P(variable=1)].
-    #     """
-    #     # Helper: for a given ordering and a subset, return the indices in that ordering.
-    #     def get_indices(clique_vars, subset):
-    #         return [i for i, var in enumerate(clique_vars) if var in subset]
-        
-    #     # Helper: for an assignment tuple and a list of indices, project the assignment onto those indices.
-    #     def project_assignment(assignment, indices):
-    #         return tuple(assignment[i] for i in indices)
-        
-    #     # First, compute the belief for each clique by combining its own potential with incoming messages.
-    #     # The belief for clique C is:
-    #     #    b_C(x_C) = φ_C(x_C) * Π_{D in neighbors(C)} m_{D→C}(x_{C∩D})
-    #     clique_beliefs = {}  # Maps clique -> (clique_vars, belief_table)
-    #     for clique in self.triangulated_cliques:
-    #         # Get clique potential information.
-    #         clique_vars, pot_table = self.clique_potentials[clique]
-    #         # Start with a copy of the potential table.(Initialize the product factor with clique's own potential)
-    #         belief = {assignment: value for assignment, value in pot_table.items()}
-            
-    #         # Multiply in all incoming messages (from neighbors that send a message to this clique).
-    #         for neighbor in self.junction_tree[clique]:
-    #             if (neighbor, clique) in self.messages:
-    #                 msg = self.messages[(neighbor, clique)]
-    #                 # The separator between the cliques is the intersection.
-    #                 separator = clique & neighbor
-    #                 # Get indices in clique_vars corresponding to the separator.
-    #                 indices = get_indices(clique_vars, separator)
-    #                 # For every full assignment in the clique, multiply by the message value
-    #                 # corresponding to its projection onto the separator.
-    #                 for assignment in belief:
-    #                     proj = project_assignment(assignment, indices)
-    #                     belief[assignment] *= msg[proj]
-    #         clique_beliefs[clique] = (clique_vars, belief)
-        
-    #     # Next, compute the marginal for each variable.
-    #     # For each variable, we pick one clique that contains it (by the running intersection property,
-    #     # the marginal will be consistent across cliques).
-    #     marginals = {var: [0, 0] for var in range(self.num_vars)}  # Initialize marginals.
-    #     for var in range(self.num_vars):
-    #         found = False
-    #         for clique, (clique_vars, belief) in clique_beliefs.items():
-    #             if var in clique:
-    #                 # Get the index of the variable in the clique ordering.
-    #                 var_index = clique_vars.index(var)
-    #                 sum0 = 0.0
-    #                 sum1 = 0.0
-    #                 for assignment, value in belief.items():
-    #                     if assignment[var_index] == 0:
-    #                         sum0 += value
-    #                     else:
-    #                         sum1 += value
-    #                 total = sum0 + sum1
-    #                 if total > 0:
-    #                     marginals[var] = [sum0 / total, sum1 / total]
-    #                 else:
-    #                     marginals[var] = [0.0, 0.0]
-    #                 found = True
-    #                 break
-    #         if not found:
-    #             raise ValueError("Variable {} not found in any clique.".format(var))
-        
-    #     # Return marginals as a list ordered by variable.
-    #     return [marginals[i] for i in range(self.num_vars)]
-    #      for key, value in messages.items():
-    # # Extract the two frozensets from the key tuple
-    # frozenset1, frozenset2 = key
-    
-    # print(f"Key: ({frozenset1}, {frozenset2})")
-    # print("Value:")
-    # for subkey, subvalue in value.items():
-    #     print(f"  {subkey}: {subvalue}")
-    # print()       
-    # def compute_marginals(self):
-    #     """
-    #     Compute the marginal probabilities for all variables in the graphical model.
-        
-    #     What to do here:
-    #     ----------------
-    #     - Use the message passing algorithm to compute the marginal probabilities for each variable.
-    #     - Return the marginals as a list of lists, where each inner list contains the probabilities for a variable.
-        
-    #     Refer to the sample test case for the expected format of the marginals.
-    #     """
-    #     pass
-
     def compute_top_k(self):
         """
         Compute the top-k most probable assignments in the graphical model.
         
-        - Uses max-product message passing.
-        - Selects k highest probability assignments from the joint distribution.
+        This method computes the joint probability for each full assignment
+        over all variables (using the original factors in self.potentials), and then
+        selects the top k assignments with the highest (unnormalized) probabilities.
+        
+        Returns:
+            A list of tuples [(assignment_dict, joint_probability), ...] for the top k assignments,
+            sorted in descending order of probability.
         """
-        root = next(iter(self.junction_tree))  # Pick an arbitrary root
-        messages = {}
-
-        def send_max_message(from_clique, to_clique):
-            """Compute the max-product message."""
-            separator = from_clique & to_clique  # Find separator set
-            incoming_potential = self.assigned_potentials[from_clique]
+        import itertools
+        
+        # -------------------------------------------------------------------------
+        # 1. Get the full set of variables in the model.
+        #    We derive these from the clique potentials (each clique has a tuple of variables).
+        # -------------------------------------------------------------------------
+        all_vars = sorted({var for clique, (clique_vars, _) in self.clique_potentials.items() 
+                        for var in clique_vars})
+        
+        # -------------------------------------------------------------------------
+        # 2. Precompute factor tables for all factors.
+        #    self.potentials is a dictionary mapping a factor (as a tuple of variables)
+        #    to its flat list of potential values. We convert each into a dictionary mapping
+        #    assignments (tuples) to values using self.factor_from_list.
+        #    We use a canonical (i.e., sorted) ordering for factor variables.
+        # -------------------------------------------------------------------------
+        factor_tables = {}
+        for factor, flat_list in self.potentials.items():
+            # Get the canonical (sorted) ordering for the factor variables.
+            factor_vars = tuple(sorted(factor))
+            factor_tables[factor_vars] = self.factor_from_list(factor_vars, flat_list)
+        
+        # -------------------------------------------------------------------------
+        # 3. Enumerate all full assignments over the variables.
+        #    We assume binary variables (0 and 1) so there are 2^(|all_vars|) assignments.
+        # -------------------------------------------------------------------------
+        all_assignments = list(itertools.product([0, 1], repeat=len(all_vars)))
+        
+        # -------------------------------------------------------------------------
+        # 4. Compute the joint (unnormalized) probability for each full assignment.
+        #    The joint probability is proportional to the product over all factors:
+        #         P(x) ∝ ∏_{f in factors} φ_f(x_f)
+        #    where x_f is the projection of the full assignment onto the factor's variables.
+        # -------------------------------------------------------------------------
+        assignment_probs = []
+        for assignment in all_assignments:
+            # Build a dictionary mapping each variable to its assigned value.
+            assign_dict = dict(zip(all_vars, assignment))
+            joint_prob = 1.0
             
-            for neighbor in self.junction_tree[from_clique]:
-                if neighbor != to_clique and (neighbor, from_clique) in messages:
-                    incoming_potential = [
-                        p1 * p2 for p1, p2 in zip(incoming_potential, messages[(neighbor, from_clique)])
-                    ]
+            # Multiply in the contribution from each factor.
+            for factor_vars, table in factor_tables.items():
+                # Extract the sub-assignment for the current factor, in the canonical order.
+                sub_assignment = tuple(assign_dict[var] for var in factor_vars)
+                joint_prob *= table[sub_assignment]
             
-            # Maximize over non-separator variables
-            max_potential = max(incoming_potential)
-            messages[(from_clique, to_clique)] = [max_potential]
+            assignment_probs.append((assign_dict, joint_prob))
+        
+        # -------------------------------------------------------------------------
+        # 5. Sort all assignments in descending order of joint probability,
+        #    and select the top k assignments.
+        # -------------------------------------------------------------------------
+        assignment_probs.sort(key=lambda x: x[1], reverse=True)
+        top_k = assignment_probs[:self.k]
+        
+        return top_k
 
-        # Perform upward max-product pass
-        visited = set()
+    # def compute_top_k(self):
+    #     """
+    #     Compute the top-k most probable assignments in the graphical model.
+        
+    #     - Uses max-product message passing.
+    #     - Selects k highest probability assignments from the joint distribution.
+    #     """
+    #     root = next(iter(self.junction_tree))  # Pick an arbitrary root
+    #     messages = {}
 
-        def upward_pass(clique, parent=None):
-            """Recursive function to pass max-product messages from leaves to root."""
-            visited.add(clique)
-            for neighbor in self.junction_tree[clique]:
-                if neighbor not in visited:
-                    upward_pass(neighbor, clique)
-                    send_max_message(neighbor, clique)
+    #     def send_max_message(from_clique, to_clique):
+    #         """Compute the max-product message."""
+    #         separator = from_clique & to_clique  # Find separator set
+    #         incoming_potential = self.assigned_potentials[from_clique]
+            
+    #         for neighbor in self.junction_tree[from_clique]:
+    #             if neighbor != to_clique and (neighbor, from_clique) in messages:
+    #                 incoming_potential = [
+    #                     p1 * p2 for p1, p2 in zip(incoming_potential, messages[(neighbor, from_clique)])
+    #                 ]
+            
+    #         # Maximize over non-separator variables
+    #         max_potential = max(incoming_potential)
+    #         messages[(from_clique, to_clique)] = [max_potential]
 
-        upward_pass(root)
+    #     # Perform upward max-product pass
+    #     visited = set()
 
-        # Compute final beliefs at root
-        root_belief = self.assigned_potentials[root]
-        for neighbor in self.junction_tree[root]:
-            root_belief = [p1 * p2 for p1, p2 in zip(root_belief, messages[(neighbor, root)])]
+    #     def upward_pass(clique, parent=None):
+    #         """Recursive function to pass max-product messages from leaves to root."""
+    #         visited.add(clique)
+    #         for neighbor in self.junction_tree[clique]:
+    #             if neighbor not in visited:
+    #                 upward_pass(neighbor, clique)
+    #                 send_max_message(neighbor, clique)
 
-        # Find top-k assignments
-        top_k = heapq.nlargest(self.k, enumerate(root_belief), key=lambda x: x[1])
+    #     upward_pass(root)
 
-        return [{"assignment": idx, "probability": prob} for idx, prob in top_k]
+    #     # Compute final beliefs at root
+    #     root_belief = self.assigned_potentials[root]
+    #     for neighbor in self.junction_tree[root]:
+    #         root_belief = [p1 * p2 for p1, p2 in zip(root_belief, messages[(neighbor, root)])]
+
+    #     # Find top-k assignments
+    #     top_k = heapq.nlargest(self.k, enumerate(root_belief), key=lambda x: x[1])
+
+    #     return [{"assignment": idx, "probability": prob} for idx, prob in top_k]
 
 
 
