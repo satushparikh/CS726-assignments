@@ -377,15 +377,6 @@ class Inference:
                     continue 
                 messages[(clique,neighbor)] = send_message(clique,neighbor)
                 backward_pass(neighbor,clique)
-    #      for key, value in messages.items():
-    # # Extract the two frozensets from the key tuple
-    # frozenset1, frozenset2 = key
-    
-    # print(f"Key: ({frozenset1}, {frozenset2})")
-    # print("Value:")
-    # for subkey, subvalue in value.items():
-    #     print(f"  {subkey}: {subvalue}")
-    # print()       
         # Select an arbitrary clique as the root.
         root = next(iter(self.junction_tree))
         upward_pass(root)
@@ -409,87 +400,173 @@ class Inference:
         # The partition function Z is the sum of the belief over all assignments.
         Z = sum(belief.values())
         self.Z = Z
+        self.messages = messages.copy()
         return Z
 
     def compute_marginals(self):
         """
-        Compute the marginal probabilities for all variables in the graphical model.
-        
-        Assumes:
-        - self.clique_potentials is a dict mapping each clique (a frozenset) to a tuple:
-                (clique_vars, potential_table)
-            where:
-                * clique_vars is a tuple (in sorted order) listing the clique's variables.
-                * potential_table is a dictionary mapping assignments (tuples of 0's/1's) to values.
-        - self.junction_tree maps each clique to its neighbor cliques.
-        - self.messages is a dict containing messages between cliques as computed by message passing.
+        Compute the marginal probability of each variable in the graphical model
+        using the computed messages.
         
         Returns:
-        A list of marginals (one per variable, in order from variable 0 to num_vars-1),
-        where each marginal is a list of two numbers: [P(variable=0), P(variable=1)].
+            marginals: A dictionary mapping each variable to its marginal distribution.
         """
-        # Helper: for a given ordering and a subset, return the indices in that ordering.
+        marginals = {}
         def get_indices(clique_vars, subset):
             return [i for i, var in enumerate(clique_vars) if var in subset]
         
-        # Helper: for an assignment tuple and a list of indices, project the assignment onto those indices.
+        # Helper: given an assignment (tuple) and a list of indices,
+        # return the sub-assignment (tuple) corresponding to those indices.
         def project_assignment(assignment, indices):
-            return tuple(assignment[i] for i in indices)
+            return tuple(assignment[i] for i in indices)    
+        # Compute beliefs for each clique
+        clique_beliefs = {}
         
-        # First, compute the belief for each clique by combining its own potential with incoming messages.
-        # The belief for clique C is:
-        #    b_C(x_C) = φ_C(x_C) * Π_{D in neighbors(C)} m_{D→C}(x_{C∩D})
-        clique_beliefs = {}  # Maps clique -> (clique_vars, belief_table)
-        for clique in self.triangulated_cliques:
-            # Get clique potential information.
-            clique_vars, pot_table = self.clique_potentials[clique]
-            # Start with a copy of the potential table.(Initialize the product factor with clique's own potential)
-            belief = {assignment: value for assignment, value in pot_table.items()}
+        for clique, (clique_vars, potential_table) in self.clique_potentials.items():
+            belief = potential_table.copy()
             
-            # Multiply in all incoming messages (from neighbors that send a message to this clique).
+            # Multiply all incoming messages to compute belief
             for neighbor in self.junction_tree[clique]:
-                if (neighbor, clique) in self.messages:
-                    msg = self.messages[(neighbor, clique)]
-                    # The separator between the cliques is the intersection.
-                    separator = clique & neighbor
-                    # Get indices in clique_vars corresponding to the separator.
-                    indices = get_indices(clique_vars, separator)
-                    # For every full assignment in the clique, multiply by the message value
-                    # corresponding to its projection onto the separator.
-                    for assignment in belief:
-                        proj = project_assignment(assignment, indices)
-                        belief[assignment] *= msg[proj]
-            clique_beliefs[clique] = (clique_vars, belief)
+                msg = self.messages[(neighbor, clique)]
+                separator = clique & neighbor
+                indices = get_indices(clique_vars, separator)
+
+                for assignment in belief:
+                    proj = project_assignment(assignment, indices)
+                    belief[assignment] *= msg[proj]
+
+            # Normalize the belief
+            Z = sum(belief.values())
+            for assignment in belief:
+                belief[assignment] /= Z  # Normalize to make it a probability distribution
+
+            clique_beliefs[clique] = belief
+
+        # Compute marginals for each variable
+        all_vars = {var for clique_vars, _ in self.clique_potentials.values() for var in clique_vars}
         
-        # Next, compute the marginal for each variable.
-        # For each variable, we pick one clique that contains it (by the running intersection property,
-        # the marginal will be consistent across cliques).
-        marginals = {var: [0, 0] for var in range(self.num_vars)}  # Initialize marginals.
-        for var in range(self.num_vars):
-            found = False
-            for clique, (clique_vars, belief) in clique_beliefs.items():
-                if var in clique:
-                    # Get the index of the variable in the clique ordering.
-                    var_index = clique_vars.index(var)
-                    sum0 = 0.0
-                    sum1 = 0.0
-                    for assignment, value in belief.items():
-                        if assignment[var_index] == 0:
-                            sum0 += value
-                        else:
-                            sum1 += value
-                    total = sum0 + sum1
-                    if total > 0:
-                        marginals[var] = [sum0 / total, sum1 / total]
-                    else:
-                        marginals[var] = [0.0, 0.0]
-                    found = True
+        for var in all_vars:
+            # Find a clique containing this variable
+            for clique, (clique_vars, _) in self.clique_potentials.items():
+                if var in clique_vars:
                     break
-            if not found:
-                raise ValueError("Variable {} not found in any clique.".format(var))
+            
+            # Marginalize belief over all other variables
+            indices = get_indices(clique_vars, {var})
+            marginal_dist = {}
+
+            for assignment, prob in clique_beliefs[clique].items():
+                proj = project_assignment(assignment, indices)
+                if proj in marginal_dist:
+                    marginal_dist[proj] += prob
+                else:
+                    marginal_dist[proj] = prob
+
+            marginals[var] = marginal_dist
+
+        return marginals
+
+    # def compute_marginals(self):
+    #     """
+    #     Compute the marginal probabilities for all variables in the graphical model.
         
-        # Return marginals as a list ordered by variable.
-        return [marginals[i] for i in range(self.num_vars)]
+    #     Assumes:
+    #     - self.clique_potentials is a dict mapping each clique (a frozenset) to a tuple:
+    #             (clique_vars, potential_table)
+    #         where:
+    #             * clique_vars is a tuple (in sorted order) listing the clique's variables.
+    #             * potential_table is a dictionary mapping assignments (tuples of 0's/1's) to values.
+    #     - self.junction_tree maps each clique to its neighbor cliques.
+    #     - self.messages is a dict containing messages between cliques as computed by message passing.
+        
+    #     Returns:
+    #     A list of marginals (one per variable, in order from variable 0 to num_vars-1),
+    #     where each marginal is a list of two numbers: [P(variable=0), P(variable=1)].
+    #     """
+    #     # Helper: for a given ordering and a subset, return the indices in that ordering.
+    #     def get_indices(clique_vars, subset):
+    #         return [i for i, var in enumerate(clique_vars) if var in subset]
+        
+    #     # Helper: for an assignment tuple and a list of indices, project the assignment onto those indices.
+    #     def project_assignment(assignment, indices):
+    #         return tuple(assignment[i] for i in indices)
+        
+    #     # First, compute the belief for each clique by combining its own potential with incoming messages.
+    #     # The belief for clique C is:
+    #     #    b_C(x_C) = φ_C(x_C) * Π_{D in neighbors(C)} m_{D→C}(x_{C∩D})
+    #     clique_beliefs = {}  # Maps clique -> (clique_vars, belief_table)
+    #     for clique in self.triangulated_cliques:
+    #         # Get clique potential information.
+    #         clique_vars, pot_table = self.clique_potentials[clique]
+    #         # Start with a copy of the potential table.(Initialize the product factor with clique's own potential)
+    #         belief = {assignment: value for assignment, value in pot_table.items()}
+            
+    #         # Multiply in all incoming messages (from neighbors that send a message to this clique).
+    #         for neighbor in self.junction_tree[clique]:
+    #             if (neighbor, clique) in self.messages:
+    #                 msg = self.messages[(neighbor, clique)]
+    #                 # The separator between the cliques is the intersection.
+    #                 separator = clique & neighbor
+    #                 # Get indices in clique_vars corresponding to the separator.
+    #                 indices = get_indices(clique_vars, separator)
+    #                 # For every full assignment in the clique, multiply by the message value
+    #                 # corresponding to its projection onto the separator.
+    #                 for assignment in belief:
+    #                     proj = project_assignment(assignment, indices)
+    #                     belief[assignment] *= msg[proj]
+    #         clique_beliefs[clique] = (clique_vars, belief)
+        
+    #     # Next, compute the marginal for each variable.
+    #     # For each variable, we pick one clique that contains it (by the running intersection property,
+    #     # the marginal will be consistent across cliques).
+    #     marginals = {var: [0, 0] for var in range(self.num_vars)}  # Initialize marginals.
+    #     for var in range(self.num_vars):
+    #         found = False
+    #         for clique, (clique_vars, belief) in clique_beliefs.items():
+    #             if var in clique:
+    #                 # Get the index of the variable in the clique ordering.
+    #                 var_index = clique_vars.index(var)
+    #                 sum0 = 0.0
+    #                 sum1 = 0.0
+    #                 for assignment, value in belief.items():
+    #                     if assignment[var_index] == 0:
+    #                         sum0 += value
+    #                     else:
+    #                         sum1 += value
+    #                 total = sum0 + sum1
+    #                 if total > 0:
+    #                     marginals[var] = [sum0 / total, sum1 / total]
+    #                 else:
+    #                     marginals[var] = [0.0, 0.0]
+    #                 found = True
+    #                 break
+    #         if not found:
+    #             raise ValueError("Variable {} not found in any clique.".format(var))
+        
+    #     # Return marginals as a list ordered by variable.
+    #     return [marginals[i] for i in range(self.num_vars)]
+    #      for key, value in messages.items():
+    # # Extract the two frozensets from the key tuple
+    # frozenset1, frozenset2 = key
+    
+    # print(f"Key: ({frozenset1}, {frozenset2})")
+    # print("Value:")
+    # for subkey, subvalue in value.items():
+    #     print(f"  {subkey}: {subvalue}")
+    # print()       
+    # def compute_marginals(self):
+    #     """
+    #     Compute the marginal probabilities for all variables in the graphical model.
+        
+    #     What to do here:
+    #     ----------------
+    #     - Use the message passing algorithm to compute the marginal probabilities for each variable.
+    #     - Return the marginals as a list of lists, where each inner list contains the probabilities for a variable.
+        
+    #     Refer to the sample test case for the expected format of the marginals.
+    #     """
+    #     pass
+
     def compute_top_k(self):
         """
         Compute the top-k most probable assignments in the graphical model.
