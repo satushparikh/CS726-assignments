@@ -371,10 +371,25 @@ class Inference:
                 upward_pass(neighbor, clique)
                 # By calling upward_pass recursively(DFS way) w ensure that every leaf node(which has no children) is processed first. After processing a neighbor's subtree, we compute a message from that neighbor(child) to the current clique(parent) using send_message function
                 messages[(neighbor, clique)] = send_message(neighbor, clique)
-          
+        def backward_pass(clique,parent=None):
+            for neighbor in self.junction_tree[clique]:
+                if neighbor == parent: 
+                    continue 
+                messages[(clique,neighbor)] = send_message(clique,neighbor)
+                backward_pass(neighbor,clique)
+    #      for key, value in messages.items():
+    # # Extract the two frozensets from the key tuple
+    # frozenset1, frozenset2 = key
+    
+    # print(f"Key: ({frozenset1}, {frozenset2})")
+    # print("Value:")
+    # for subkey, subvalue in value.items():
+    #     print(f"  {subkey}: {subvalue}")
+    # print()       
         # Select an arbitrary clique as the root.
         root = next(iter(self.junction_tree))
         upward_pass(root)
+        backward_pass(root)
         
         # At the root, compute the final belief by multiplying the clique's own potential with all incoming messages.
         root_vars, root_pot = self.clique_potentials[root]
