@@ -369,8 +369,9 @@ class Inference:
                 if neighbor == parent:
                     continue
                 upward_pass(neighbor, clique)
+                # By calling upward_pass recursively(DFS way) w ensure that every leaf node(which has no children) is processed first. After processing a neighbor's subtree, we compute a message from that neighbor(child) to the current clique(parent) using send_message function
                 messages[(neighbor, clique)] = send_message(neighbor, clique)
-        
+          
         # Select an arbitrary clique as the root.
         root = next(iter(self.junction_tree))
         upward_pass(root)
@@ -394,67 +395,6 @@ class Inference:
         Z = sum(belief.values())
         self.Z = Z
         return Z
-
-    # def get_z_value(self):
-  
-    #     """
-    #     Compute the partition function (Z value) of the graphical model.
-        
-    #     What to do here:
-    #     ----------------
-    #     - Implement the message passing algorithm to compute the partition function (Z value).
-    #     - The Z value is the normalization constant for the probability distribution.
-        
-    #     Refer to the problem statement for details on computing the partition function.
-    #     """
-      
-    #     """
-    #     Compute the partition function (Z value) of the graphical model.
-        
-    #     - Uses message passing (sum-product algorithm) on the junction tree to compute Z.
-    #     - Selects a root clique and passes messages bottom-up.
-    #     - The final belief at the root clique gives the partition function.
-    #     """
-    #     root = next(iter(self.junction_tree))  # Pick an arbitrary root
-    #     messages = {}
-
-    #     def send_message(from_clique, to_clique):
-    #         """Compute the message from one clique to another."""
-    #         separator = from_clique & to_clique  # Find separator set
-    #         incoming_potential = self.assigned_potentials[from_clique]
-            
-    #         # If there are incoming messages, multiply them
-    #         for neighbor in self.junction_tree[from_clique]:
-    #             if neighbor != to_clique and (neighbor, from_clique) in messages:
-    #                 incoming_potential = [
-    #                     p1 * p2 for p1, p2 in zip(incoming_potential, messages[(neighbor, from_clique)])
-    #                 ]
-            
-    #         # Marginalize out non-separator variables
-    #         marginalized_potential = [sum(incoming_potential)]  # Sum over all variables
-    #         messages[(from_clique, to_clique)] = marginalized_potential
-
-    #     # Perform upward pass (rooted at an arbitrary clique)
-    #     visited = set()
-
-    #     def upward_pass(clique, parent=None):
-    #         """Recursive function to pass messages from leaves to root."""
-    #         visited.add(clique)
-    #         for neighbor in self.junction_tree[clique]:
-    #             if neighbor not in visited:
-    #                 upward_pass(neighbor, clique)
-    #                 send_message(neighbor, clique)
-
-    #     upward_pass(root)
-
-    #     # Z value is the sum of beliefs at the root
-    #     root_potential = self.assigned_potentials[root]
-    #     for neighbor in self.junction_tree[root]:
-    #         root_potential = [p1 * p2 for p1, p2 in zip(root_potential, messages[(neighbor, root)])]
-
-    #     self.Z = sum(root_potential)
-    #     return self.Z
-
 
     def compute_marginals(self):
         """
@@ -488,7 +428,7 @@ class Inference:
         for clique in self.triangulated_cliques:
             # Get clique potential information.
             clique_vars, pot_table = self.clique_potentials[clique]
-            # Start with a copy of the potential table.
+            # Start with a copy of the potential table.(Initialize the product factor with clique's own potential)
             belief = {assignment: value for assignment, value in pot_table.items()}
             
             # Multiply in all incoming messages (from neighbors that send a message to this clique).
