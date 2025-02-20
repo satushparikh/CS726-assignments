@@ -3,7 +3,6 @@ import itertools
 import math
 from collections import defaultdict
 import heapq
-import os
 
 
 ########################################################################
@@ -461,10 +460,9 @@ class Inference:
                     marginal_dist[proj] += prob
                 else:
                     marginal_dist[proj] = prob
-
-            marginals[var] = marginal_dist
-
-        return marginals
+            marginals[var] = [marginal_dist[(0,)], marginal_dist[(1,)]]
+        marginals_list = [marginals[var] for var in sorted(marginals.keys())]
+        return marginals_list
 
     def compute_top_k(self):
         """
@@ -583,23 +581,10 @@ class Inference:
             results.append((full_assign, score))
         # Sort the results (they should already be sorted, but we sort to be sure).
         results = sorted(results, key=lambda x: x[1], reverse=True)
-        # print type and contents of results
-        print(f"Type of results: {type(results)}")
-        print("Contents of results:")
-        for result in results:
-            print(result)
         top_k_assignments = []
         for assignment_dict, count in results:
-            # Convert the assignment dict into a list, sorted by key.
-            # This ensures that the assignment list is in the order of keys 0,1,2,...
             assignment_list = [assignment_dict[k] for k in sorted(assignment_dict.keys())]
             probability = count / self.Z
-            # print(assignment_list)
-            # print(probability)
-            print({
-                "assignment": assignment_list,
-                "probability": probability
-            })
             top_k_assignments.append({
                 "assignment": assignment_list,
                 "probability": probability
@@ -642,11 +627,7 @@ class Get_Input_and_Check_Output:
 
 
 if __name__ == '__main__':
-    print("Hello")
-    # evaluator = Get_Input_and_Check_Output('Assignment_1\Questionnare\Sample_Testcase.json')
-    evaluator = Get_Input_and_Check_Output('samp_test2.json')
-    # evaluator = Get_Input_and_Check_Output(os.getcwd())
-    # evaluator = Get_Input_and_Check_Output('Sample_Testcase.json')
+    evaluator = Get_Input_and_Check_Output('Sample_Testcase.json')
     evaluator.get_output()
-    evaluator.write_output('Sample_Testcase_Output.json') 
+    evaluator.write_output('Sample_Testcase_Output.json')
 
