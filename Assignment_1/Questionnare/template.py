@@ -3,7 +3,7 @@ import itertools
 import math
 from collections import defaultdict
 import heapq
-
+import os
 
 
 ########################################################################
@@ -466,74 +466,6 @@ class Inference:
 
         return marginals
 
-    # def compute_top_k(self):
-    #     """
-    #     Compute the top-k most probable assignments in the graphical model.
-        
-    #     This method computes the joint probability for each full assignment
-    #     over all variables (using the original factors in self.potentials), and then
-    #     selects the top k assignments with the highest (unnormalized) probabilities.
-        
-    #     Returns:
-    #         A list of tuples [(assignment_dict, joint_probability), ...] for the top k assignments,
-    #         sorted in descending order of probability.
-    #     """
-    #     import itertools
-        
-    #     # -------------------------------------------------------------------------
-    #     # 1. Get the full set of variables in the model.
-    #     #    We derive these from the clique potentials (each clique has a tuple of variables).
-    #     # -------------------------------------------------------------------------
-    #     all_vars = sorted({var for clique, (clique_vars, _) in self.clique_potentials.items() 
-    #                     for var in clique_vars})
-        
-    #     # -------------------------------------------------------------------------
-    #     # 2. Precompute factor tables for all factors.
-    #     #    self.potentials is a dictionary mapping a factor (as a tuple of variables)
-    #     #    to its flat list of potential values. We convert each into a dictionary mapping
-    #     #    assignments (tuples) to values using self.factor_from_list.
-    #     #    We use a canonical (i.e., sorted) ordering for factor variables.
-    #     # -------------------------------------------------------------------------
-    #     factor_tables = {}
-    #     for factor, flat_list in self.potentials.items():
-    #         # Get the canonical (sorted) ordering for the factor variables.
-    #         factor_vars = tuple(sorted(factor))
-    #         factor_tables[factor_vars] = self.factor_from_list(factor_vars, flat_list)
-        
-    #     # -------------------------------------------------------------------------
-    #     # 3. Enumerate all full assignments over the variables.
-    #     #    We assume binary variables (0 and 1) so there are 2^(|all_vars|) assignments.
-    #     # -------------------------------------------------------------------------
-    #     all_assignments = list(itertools.product([0, 1], repeat=len(all_vars)))
-        
-    #     # -------------------------------------------------------------------------
-    #     # 4. Compute the joint (unnormalized) probability for each full assignment.
-    #     #    The joint probability is proportional to the product over all factors:
-    #     #         P(x) ∝ ∏_{f in factors} φ_f(x_f)
-    #     #    where x_f is the projection of the full assignment onto the factor's variables.
-    #     # -------------------------------------------------------------------------
-    #     assignment_probs = []
-    #     for assignment in all_assignments:
-    #         # Build a dictionary mapping each variable to its assigned value.
-    #         assign_dict = dict(zip(all_vars, assignment))
-    #         joint_prob = 1.0
-            
-    #         # Multiply in the contribution from each factor.
-    #         for factor_vars, table in factor_tables.items():
-    #             # Extract the sub-assignment for the current factor, in the canonical order.
-    #             sub_assignment = tuple(assign_dict[var] for var in factor_vars)
-    #             joint_prob *= table[sub_assignment]
-            
-    #         assignment_probs.append((assign_dict, joint_prob))
-        
-    #     # -------------------------------------------------------------------------
-    #     # 5. Sort all assignments in descending order of joint probability,
-    #     #    and select the top k assignments.
-    #     # -------------------------------------------------------------------------
-    #     assignment_probs.sort(key=lambda x: x[1], reverse=True)
-    #     top_k = assignment_probs[:self.k]
-        
-    #     return top_k
     def compute_top_k(self):
         """
         Compute the top-k most probable assignments in the graphical model using a max-product 
@@ -651,55 +583,28 @@ class Inference:
             results.append((full_assign, score))
         # Sort the results (they should already be sorted, but we sort to be sure).
         results = sorted(results, key=lambda x: x[1], reverse=True)
-        return results
-    # def compute_top_k(self):
-    #     """
-    #     Compute the top-k most probable assignments in the graphical model.
-        
-    #     - Uses max-product message passing.
-    #     - Selects k highest probability assignments from the joint distribution.
-    #     """
-    #     root = next(iter(self.junction_tree))  # Pick an arbitrary root
-    #     messages = {}
-
-    #     def send_max_message(from_clique, to_clique):
-    #         """Compute the max-product message."""
-    #         separator = from_clique & to_clique  # Find separator set
-    #         incoming_potential = self.assigned_potentials[from_clique]
-            
-    #         for neighbor in self.junction_tree[from_clique]:
-    #             if neighbor != to_clique and (neighbor, from_clique) in messages:
-    #                 incoming_potential = [
-    #                     p1 * p2 for p1, p2 in zip(incoming_potential, messages[(neighbor, from_clique)])
-    #                 ]
-            
-    #         # Maximize over non-separator variables
-    #         max_potential = max(incoming_potential)
-    #         messages[(from_clique, to_clique)] = [max_potential]
-
-    #     # Perform upward max-product pass
-    #     visited = set()
-
-    #     def upward_pass(clique, parent=None):
-    #         """Recursive function to pass max-product messages from leaves to root."""
-    #         visited.add(clique)
-    #         for neighbor in self.junction_tree[clique]:
-    #             if neighbor not in visited:
-    #                 upward_pass(neighbor, clique)
-    #                 send_max_message(neighbor, clique)
-
-    #     upward_pass(root)
-
-    #     # Compute final beliefs at root
-    #     root_belief = self.assigned_potentials[root]
-    #     for neighbor in self.junction_tree[root]:
-    #         root_belief = [p1 * p2 for p1, p2 in zip(root_belief, messages[(neighbor, root)])]
-
-    #     # Find top-k assignments
-    #     top_k = heapq.nlargest(self.k, enumerate(root_belief), key=lambda x: x[1])
-
-    #     return [{"assignment": idx, "probability": prob} for idx, prob in top_k]
-
+        # print type and contents of results
+        print(f"Type of results: {type(results)}")
+        print("Contents of results:")
+        for result in results:
+            print(result)
+        top_k_assignments = []
+        for assignment_dict, count in results:
+            # Convert the assignment dict into a list, sorted by key.
+            # This ensures that the assignment list is in the order of keys 0,1,2,...
+            assignment_list = [assignment_dict[k] for k in sorted(assignment_dict.keys())]
+            probability = count / self.Z
+            # print(assignment_list)
+            # print(probability)
+            print({
+                "assignment": assignment_list,
+                "probability": probability
+            })
+            top_k_assignments.append({
+                "assignment": assignment_list,
+                "probability": probability
+            })
+        return top_k_assignments
 
 
 ########################################################################
@@ -739,8 +644,8 @@ class Get_Input_and_Check_Output:
 if __name__ == '__main__':
     print("Hello")
     # evaluator = Get_Input_and_Check_Output('Assignment_1\Questionnare\Sample_Testcase.json')
-    # evaluator = Get_Input_and_Check_Output('Assignment_1\Questionnare\samp_test2.json')
-    evaluator = Get_Input_and_Check_Output('Assignment_1\Questionnare\samp_test3.json')
+    evaluator = Get_Input_and_Check_Output('samp_test2.json')
+    # evaluator = Get_Input_and_Check_Output(os.getcwd())
     # evaluator = Get_Input_and_Check_Output('Sample_Testcase.json')
     evaluator.get_output()
     evaluator.write_output('Sample_Testcase_Output.json') 
