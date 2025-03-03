@@ -461,6 +461,7 @@ class Inference:
                 else:
                     marginal_dist[proj] = prob
             marginals[var] = [marginal_dist[(0,)], marginal_dist[(1,)]]
+
         marginals_list = [marginals[var] for var in sorted(marginals.keys())]
         return marginals_list
 
