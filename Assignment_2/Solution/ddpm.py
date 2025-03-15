@@ -77,16 +77,16 @@ class NoiseScheduler():
         return self.num_timesteps
     
 
-def linear_noise_schedule_variations():
-    lbeta_values = [1e-4, 5e-4, 1e-3, 5e-3, 1e-2]
-    ubeta_values = [0.02, 0.03, 0.05, 0.07, 0.1]
+# def linear_noise_schedule_variations():
+#     lbeta_values = [1e-4, 5e-4, 1e-3, 5e-3, 1e-2]
+#     ubeta_values = [0.02, 0.03, 0.05, 0.07, 0.1]
 
-    results = []
-    for lbeta, ubeta in zip(lbeta_values, ubeta_values):
-        scheduler = NoiseScheduler(num_timesteps=50, type="linear", beta_start=lbeta, beta_end=ubeta)
-        results.append((lbeta, ubeta, scheduler.betas.numpy()))
+#     results = []
+#     for lbeta, ubeta in zip(lbeta_values, ubeta_values):
+#         scheduler = NoiseScheduler(num_timesteps=50, type="linear", beta_start=lbeta, beta_end=ubeta)
+#         results.append((lbeta, ubeta, scheduler.betas.numpy()))
 
-    return results
+#     return results
 
 #########################################
 # Helper modules for the complex U-Net  #

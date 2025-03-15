@@ -1,2 +1,4 @@
 # add gitignore for a text file named ass2_instructions.txt
 ass2_instructions.txt
+./Assignment_2/Solution/testing.ipynb
+./Assignment_2/Solution/ddpm_copy.py
