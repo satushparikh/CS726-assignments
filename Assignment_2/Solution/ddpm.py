@@ -1,12 +1,92 @@
 import torch
+import torch.utils
+import torch.utils.data
+from tqdm.auto import tqdm
 import torch.nn as nn
 import torch.nn.functional as F
 import argparse
 import utils
 import dataset
 import os
-from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
+import numpy as np
+
+
+class NoiseScheduler():
+    """
+    Noise scheduler for the DDPM model
+
+    Args:
+        num_timesteps: int, the number of timesteps
+        type: str, the type of scheduler to use
+        **kwargs: additional arguments for the scheduler
+
+    This object sets up all the constants like alpha, beta, sigma, etc. required for the DDPM model
+    
+    """
+    def __init__(self, num_timesteps=50, type="linear", **kwargs):
+
+        self.num_timesteps = num_timesteps
+        self.type = type
+
+        if type == "linear":
+            self.init_linear_schedule(**kwargs)
+        elif type == "cosine":
+            self.init_cosine_schedule(**kwargs)
+        elif type == "sigmoid":
+            self.init_sigmoid_schedule(**kwargs)
+        else:
+            raise NotImplementedError(f"{type} scheduler is not implemented") # change this if you implement additional schedulers
+
+
+    def init_linear_schedule(self, beta_start, beta_end):
+        """
+        Initialise alpha and beta for linear noise scheduler
+
+        Args:
+            beta_start: Starting value of beta (the initial noise)
+            beta_end: The final value of beta (that is addded at the last time-step)
+        """
+
+        self.betas = torch.linspace(beta_start, beta_end, self.num_timesteps, dtype=torch.float32)
+        self.alphas = 1. - self.betas
+        self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
+        self.sqrt_alpha_cumprod = torch.sqrt(self.alphas_cumprod)
+        self.sqrt_one_minus_alpha_cumprod = torch.sqrt(1 - self.sqrt_alpha_cumprod)
+
+    def init_cosine_schedule(self):
+        """Initializes a cosine noise schedule as per [1]."""
+        # Reference: https://www.zainnasir.com/blog/cosine-beta-schedule-for-denoising-diffusion-models/
+        epsilon = 0.008
+        steps = torch.linspace(0, self.num_timesteps, self.num_timesteps + 1)
+        f_t = torch.cos(( (steps / self.num_timesteps) + epsilon ) / ( 1 + epsilon ) * ( np.pi / 2 )) ** 2
+        alphas_cumprod = f_t / f_t[0]
+        self.alphas_cumprod = alphas_cumprod[:-1]
+        self.betas = 1 - (self.alphas_cumprod[1:] / self.alphas_cumprod[:-1])
+        self.betas = torch.clamp(self.betas, min=1e-5, max=0.999)
+
+    def init_sigmoid_schedule(self, beta_start, beta_end):
+        """Initializes a sigmoid noise schedule."""
+        x = torch.linspace(-6, 6, self.num_timesteps)
+        betas = torch.sigmoid(x) * (beta_end - beta_start) + beta_start
+        self.betas = betas
+        self.alphas = 1.0 - self.betas
+        self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
+        
+    def __len__(self):
+        return self.num_timesteps
+    
+
+def linear_noise_schedule_variations():
+    lbeta_values = [1e-4, 5e-4, 1e-3, 5e-3, 1e-2]
+    ubeta_values = [0.02, 0.03, 0.05, 0.07, 0.1]
+
+    results = []
+    for lbeta, ubeta in zip(lbeta_values, ubeta_values):
+        scheduler = NoiseScheduler(num_timesteps=50, type="linear", beta_start=lbeta, beta_end=ubeta)
+        results.append((lbeta, ubeta, scheduler.betas.numpy()))
+
+    return results
 
 #########################################
 # Helper modules for the complex U-Net  #
@@ -307,7 +387,7 @@ if __name__ == "__main__":
 
     # Use the complex UNet-based DDPM
     model = DDPM(in_channels=args.n_dim, n_steps=args.n_steps).to(device)
-    noise_scheduler = NoiseScheduler(num_timesteps=args.n_steps, beta_start=args.lbeta, beta_end=args.ubeta)
+    noise_scheduler = NoiseScheduler(num_timesteps=args.n_steps, type="linear", beta_start=args.lbeta, beta_end=args.ubeta)
     
     if args.mode == 'train':
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
