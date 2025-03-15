@@ -52,7 +52,7 @@ class NoiseScheduler():
         self.alphas = 1. - self.betas
         self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
         self.sqrt_alpha_cumprod = torch.sqrt(self.alphas_cumprod)
-        self.sqrt_one_minus_alpha_cumprod = torch.sqrt(1 - self.sqrt_alpha_cumprod)
+        self.sqrt_one_minus_alpha_cumprod = torch.sqrt(1 - self.alphas_cumprod)
 
     def init_cosine_schedule(self):
         """Initializes a cosine noise schedule as per [1]."""
@@ -105,6 +105,52 @@ def get_timestep_embedding(timesteps, embedding_dim):
     if embedding_dim % 2 == 1:
         emb = torch.cat([emb, torch.zeros(timesteps.shape[0], 1)], dim=1)
     return emb
+
+# Code for forwarding
+def add_noise(x_0, noise_scheduler, device="cpu", return_intermediate=False):
+    """
+    Adds noise sequentially to an image using the NoiseScheduler.
+
+    Args:
+        x_0 (torch.Tensor): The original image tensor [batch_size, C, H, W].
+        noise_scheduler (NoiseScheduler): The noise scheduler instance.
+        device (str): Device to run the computation on ("cpu" or "cuda").
+        return_intermediate (bool): If True, return all intermediate noisy images.
+
+    Returns:
+        torch.Tensor: The final noisy image x_T.
+        (Optional) List[torch.Tensor]: If return_intermediate=True, return all intermediate noisy images.
+    """
+    batch_size = x_0.shape[0]
+    num_steps = noise_scheduler.num_timesteps
+    noisy_images = [] if return_intermediate else None
+
+    for t in range(num_steps):
+        noise = torch.randn_like(x_0).to(device)  # Gaussian noise
+        alpha_cumprod_t = noise_scheduler.sqrt_alpha_cumprod[t].to(device)
+        one_minus_alpha_cumprod_t = noise_scheduler.sqrt_one_minus_alpha_cumprod[t].to(device)
+
+        x_t = alpha_cumprod_t * x_0 + one_minus_alpha_cumprod_t * noise  # Add noise
+        if return_intermediate:
+            noisy_images.append(x_t.clone())
+
+    return (x_t, noisy_images) if return_intermediate else x_t
+
+# noise_scheduler = NoiseScheduler(num_timesteps=100, beta_start=0.0001, beta_end=0.02)
+
+# # Generate noisy images
+# x_T, noisy_images = add_noise(x_0, noise_scheduler, return_intermediate=True)
+
+# # Visualize intermediate steps
+# import matplotlib.pyplot as plt
+
+# fig, axes = plt.subplots(1, 5, figsize=(15, 5))
+# for i, ax in enumerate(axes):
+#     ax.imshow(noisy_images[i * 20].squeeze().permute(1, 2, 0).cpu().numpy())  # Show every 20 steps
+#     ax.set_title(f"t={i*20}")
+#     ax.axis("off")
+# plt.show()
+
 
 class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, time_emb_dim, dropout=0.1):
