@@ -2,3 +2,12 @@
 ass2_instructions.txt
 ./Assignment_2/Solution/testing.ipynb
 ./Assignment_2/Solution/ddpm_copy.py
+ ./Assignment_2/Solution/data/cifar-10-batches-py/batches.meta
+ ./Assignment_2/Solution/data/cifar-10-batches-py/data_batch_1
+ ./Assignment_2/Solution/data/cifar-10-batches-py/data_batch_2
+ ./Assignment_2/Solution/data/cifar-10-batches-py/data_batch_3
+ ./Assignment_2/Solution/data/cifar-10-batches-py/data_batch_4
+ ./Assignment_2/Solution/data/cifar-10-batches-py/data_batch_5
+ ./Assignment_2/Solution/data/cifar-10-batches-py/readme.html
+ ./Assignment_2/Solution/data/cifar-10-batches-py/test_batch
+ ./Assignment_2/Solution/data/cifar-10-python.tar.gz
