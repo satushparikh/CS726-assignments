@@ -79,7 +79,26 @@ class TextGenerator:
                 tensor of shape (T,), where T <= self.max_output_len
         '''    
         # TODO:
-        raise NotImplementedError
+        generated_tokens = []
+        current_input = input_ids
+
+        for _ in range(self.max_output_len):
+            with torch.no_grad():
+                outputs = self.model(current_input)
+                logits = outputs.logits # Shape: (1, seq_len, vocab_size)
+            
+            last_token_logits = logits[:, -1, :]
+            next_token = torch.argmax(last_token_logits, dim=-1) # Shape: (1, )
+
+            generated_tokens.append(next_token.item())
+
+            if next_token.item() == self.eos_token_id:
+                break
+
+            current_input = torch.cat([current_input, next_token.unsqueeze(0)], dim=1)
+            print(current_input)
+        return torch.tensor(generated_tokens, dtype=torch.long)
+        # raise NotImplementedError
         
     def random_sampling(
         self, 
