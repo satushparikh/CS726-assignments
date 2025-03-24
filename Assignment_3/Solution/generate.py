@@ -162,7 +162,30 @@ class TextGenerator:
                 tensor of shape (T,), where T <= self.max_output_len
         '''    
         # TODO:
-        raise NotImplementedError
+        generated_tokens = []
+        current_inputs = input_ids
+
+        for _ in range(self.max_output_len):
+            with torch.no_grad():
+                outputs = self.model(current_inputs)
+                logits = outputs.logits
+
+            last_token_logits = logits[:, -1, :]
+            probs = torch.nn.functional.softmax(last_token_logits, dim=-1) # Shape: (1, vocab_size)
+
+            top_k_probs, top_k_indices = torch.topk(probs, self.k, dim=-1) # Shape: (1, k)
+            top_k_probs = top_k_probs / top_k_probs.sum(dim=-1, keepdim=True) # Normalization
+
+            next_token = torch.multinomial(top_k_probs, num_samples=1) # Shape: (1, 1)
+            next_token = top_k_indices.gather(dim=-1, index=next_token)
+
+            if next_token.item() == self.eos_token_id:
+                break
+
+            generated_tokens.append(next_token.item())
+            current_inputs = torch.cat([current_inputs, next_token], dim=-1)
+            print(current_inputs)
+        return torch.tensor(generated_tokens)
     
     def nucleus_sampling(
         self, 
