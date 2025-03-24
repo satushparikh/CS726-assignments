@@ -98,7 +98,6 @@ class TextGenerator:
             current_input = torch.cat([current_input, next_token.unsqueeze(0)], dim=1)
             print(current_input)
         return torch.tensor(generated_tokens, dtype=torch.long)
-        # raise NotImplementedError
         
     def random_sampling(
         self, 
@@ -207,4 +206,36 @@ class TextGenerator:
                 tensor of shape (T,), where T <= self.max_output_len
         '''    
         # TODO:
-        raise NotImplementedError
+        generated_tokens = []
+        current_inputs = input_ids
+
+        for _ in range(self.max_output_len):
+            with torch.no_grad():
+                outputs = self.model(current_inputs)
+                logits = outputs.logits
+
+            last_token_logits = logits[:, -1, :]
+            probs = torch.nn.functional.softmax(last_token_logits, dim=-1) # Shape: (1, vocab_size)
+
+            # Sorting the probabilities, to obtain the smallest set of tokens, for the cumulative probability to exceed the threshold
+            sorted_probs, sorted_indices = torch.sort(probs, descending=True, dim=-1)
+            cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+
+            nucleus_mask = cumulative_probs <= self.p # Boolean Mask to select the tokens
+            nucleus_mask[..., 0] = True
+
+            top_p_probs = sorted_probs[nucleus_mask]
+            top_p_indices = sorted_indices[nucleus_mask]
+
+            top_p_probs = top_p_probs / top_p_probs.sum(dim=-1, keepdim=True) # Normalization
+            next_token = torch.multinomial(top_p_probs, num_samples=1) # Shape: (1, )
+            next_token = top_p_indices[next_token]
+
+            if next_token.item() == self.eos_token_id:
+                break
+
+            generated_tokens.append(next_token.item())
+            
+            current_inputs = torch.cat([current_inputs, next_token.unsqueeze(0)], dim=-1)
+
+        return torch.tensor(generated_tokens)
