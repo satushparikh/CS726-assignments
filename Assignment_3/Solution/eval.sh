@@ -3,6 +3,8 @@
 output_dir="./Results/1.1_Introduction_to_LLM_Decoding_Techniques"
 mkdir -p "$output_dir"
 
+source ~/.bashrc
+conda activate cs726_a3
 echo "Running task0.py with greedy decoding"
 CUDA_VISIBLE_DEVICES=0 python task0.py --hf-token $HF_TOKEN --decoding-strategy "greedy" > ${output_dir}/greedy_outputs.txt 2>&1
 echo "Greedy Decoding Completed\n"
@@ -36,5 +38,6 @@ done
 echo "Nucleus Sampling Completed\n"
 
 echo "Plotting the Metrics"
+conda activate myenv
 python plot.py
 echo "Results stored in ./Results/"
