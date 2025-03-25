@@ -53,7 +53,37 @@ class ConstrainedTextGenerator:
             Returns:
                 tensor of shape (T,), where T <= self.max_output_len
         '''    
-        # TODO:
-        raise NotImplementedError
-        
+        word_token_ids = [self.tokenizer.encode(word, add_special_tokens=False) for word in word_list]
+        word_token_ids = {tuple(w): False for w in word_token_ids}
+
+        generated_tokens = []
+        current_input = input_ids
+        used_words = set()
+
+        for _ in range(self.max_output_len):
+            with torch.no_grad():
+                outputs = self.model(current_input)
+                logits = outputs.logits
+
+            logits = logits[:, -1, :]
+            probs = torch.softmax(logits, dim=-1)
+            missing_words = [tokens for tokens, used in word_token_ids.items() if not used]
+
+            if missing_words:
+                all_missing_tokens = {tok for word in missing_words for tok in word}
+                logits[:, list(all_missing_tokens)] += 5.0 # Artificially boosting probabilities to select the missing words
+
+            next_token = torch.argmax(probs, dim=-1)
+
+            if next_token.item() == self.eos_token_id and all(word_token.values()):
+                break
+
+            generated_tokens.append(next_token)
+            current_input = torch.cat([current_input, next_token.unsqueeze(0)], dim=1)
+
+            for word_token in word_token_ids.keys():
+                if len(generated_tokens) >= len(word_token) and tuple(generated_tokens[-len(word_token):]) == word_token:
+                    word_token_ids[word_token] = True
+
+            return torch.tensor(generated_tokens, dtype=torch.long)
         
