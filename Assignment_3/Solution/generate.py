@@ -96,7 +96,6 @@ class TextGenerator:
                 break
 
             current_input = torch.cat([current_input, next_token.unsqueeze(0)], dim=1)
-            print(current_input)
         return torch.tensor(generated_tokens, dtype=torch.long)
         
     def random_sampling(
@@ -138,7 +137,6 @@ class TextGenerator:
             
             generated_tokens.append(next_token.item())
             current_inputs = torch.cat([current_inputs, next_token], dim=-1)
-            print(current_inputs)
         return torch.tensor(generated_tokens)
     
     def topk_sampling(
@@ -183,7 +181,6 @@ class TextGenerator:
 
             generated_tokens.append(next_token.item())
             current_inputs = torch.cat([current_inputs, next_token], dim=-1)
-            print(current_inputs)
         return torch.tensor(generated_tokens)
     
     def nucleus_sampling(
