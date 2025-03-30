@@ -98,7 +98,7 @@ class MedusaTextGenerator:
                 # input_ids had shape (1,seq_len) and now has shape (1,seq_len+1). where seq_len is current sequence length 
                 # next_token.unsqueeze(0) # Shape: (1,1) unsqueeze(0) adds a batch dimension, making the shape explicitly match input_ids 
         # return a tensor containing only the generated tokens
-        return torch.tensor(generated_tokens, dtype = torch.int).unsqueeze(0)
+        return torch.tensor(generated_tokens, dtype = torch.int)
     # Since the function signature specifies a return type of Int[torch.Tensor, "batch out_seq_len"] (i.e., a 2D tensor with shape (batch, out_seq_len)), you need to modify it to return a tensor with shape (1, T) when batch size is 1. You can achieve this by unsqueezing the 0-th dimension:
                 
 
