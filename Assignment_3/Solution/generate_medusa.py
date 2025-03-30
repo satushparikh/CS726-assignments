@@ -153,8 +153,41 @@ class MedusaTextGenerator:
             # For each of the S+1 heads, extend the candidates 
             for s in range(len(p_list)):
                 # compute log softmax for numerical stability
-                log_probs = torch.log_softmax
+                log_probs = torch.log_softmax(p_list[s], dim =-1) # applies softmax along last dimension shape: (1, vocab_size)
+                new_candidates = List[List[int]] = []
+                new_scores = List[float] = []
+                # for each candidate in the beam
+                for cand, cand_score in zip(candidates, scores):
+                    # Retrieve top W tokens from the current head's distribution 
+                    top_log_probs, top_indices = torch.topk(log_probs[0], self.beam_width)
+                    for i in range(self.beam_width):
+                        token = top_indices[i].item()
+                        token_log_prob =  top_log_probs[i].item()
+                        # create a new candidate sequence by appending the token
+                        new_candidates.append(cand+[token])
+                        new_scores.append(cand_score + token_log_prob)
+                # Retain only the top W candidates based on the new scores
+                scores_tensor = torch.tensor(new_scores)
+                sorted_scores, sorted_indices = torch.sort(scores_tensor, descending=True)
+                top_indices = sorted_indices[:self.beam_width].tolist()
+                candidates = [new_candidates[i] for i in top_indices]
+                scores = [new_scores[i] for i in top_indices]
+                
+            # Step 3: Re-score candidate sequences using the LM head
+            """ 
+            Use the LM head to compute scores for all candidate sequences and pick the one with the highest score. Specifically, for a candidate sequence {ŷ_1,...,ŷ_t-1,ŷ_t,...,ŷ_t+S}, the score is computed as \sigma_{i=t}^{t+S} log p_i(ŷ_i | ŷ_1,...,ŷ_{i-1}) where log p_i is log_softmax(ŷ_i)
+            """
+            best_candidate = candidates[0]
+            best_score = scores[0]
+            for cand, score in zip(candidates, scores):
+                if score > best_score:
+                    best_candidate = cand
+                    best_score = score
 
+            # Optional: You can check for EOS token and trim the candidate if necessary.
+            # Here we assume the candidate is used as is.
+            best_candidate_tensor = torch.tensor(best_candidate, dtype=torch.long, device=input_ids.device).unsqueeze(0)
+            return best_candidate_tensor
         # TODO:
         # raise NotImplementedError
             
