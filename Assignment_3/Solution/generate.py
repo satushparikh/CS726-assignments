@@ -96,7 +96,7 @@ class TextGenerator:
                 break
 
             current_input = torch.cat([current_input, next_token.unsqueeze(0)], dim=1)
-        return torch.tensor(generated_tokens, dtype=torch.long)
+        return torch.tensor(generated_tokens)
         
     def random_sampling(
         self, 

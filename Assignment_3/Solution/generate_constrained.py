@@ -97,4 +97,4 @@ class ConstrainedTextGenerator:
             if current_trie_node.is_end_of_word:
                 current_trie_node = trie_root
         
-        return torch.tensor(generated_tokens, dtype=torch.long)
+        return torch.tensor(generated_tokens)
