@@ -72,6 +72,37 @@ class MedusaTextGenerator:
             Returns:
                 tensor of shape (T,), where T <= self.max_output_len
         '''    
+        generated_tokens: List[int] = []
+
+        # Ensure no gradients are computed during inference
+        with torch.no_grad():
+            for _ in range(self.max_output_len):
+                # Forward pass: compute logits using only the LM head
+                outputs = self.model(input_ids)
+                logits  = outputs.logits #Shape:(1, seq_len, vocab_size)
+                # 1 is the batch size, seq_len is the number of tokens in the input, vocab_size is the number of possible tokens in model's vocabulary
+
+                # Get the logits for the last token; this isolates the probabilities for the next token
+                last_token_logits = logits[:, -1, :]
+                # greedily pick the token with the highest probability 
+                next_token = torch.argmax(last_token_logits, dim = -1) # Shape: (1, )
+                # next_token is a tensor of shape (1,) containing with the index of the most probable token
+
+                # Append the predicted token to the generated tokens list
+                generated_tokens.append(next_token.item()) # Stop if EOS token is generated
+                if next_token.item() == self.eos_token_id:
+                    break 
+                # Append the generated token to the input_ids for the next step. 
+                # Unsqueeze to match dimensions: (1,) -> (1,1)
+                input_ids = torch.cat([input_ids,next_token.unsqueeze(0)],dim=1)
+                # input_ids had shape (1,seq_len) and now has shape (1,seq_len+1). where seq_len is current sequence length 
+                # next_token.unsqueeze(0) # Shape: (1,1) unsqueeze(0) adds a batch dimension, making the shape explicitly match input_ids 
+        # return a tensor containing only the generated tokens
+        return torch.tensor(generated_tokens, dtype = torch.int)
+                
+
+
+
         # TODO:
         raise NotImplementedError
 
