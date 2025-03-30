@@ -98,13 +98,14 @@ class MedusaTextGenerator:
                 # input_ids had shape (1,seq_len) and now has shape (1,seq_len+1). where seq_len is current sequence length 
                 # next_token.unsqueeze(0) # Shape: (1,1) unsqueeze(0) adds a batch dimension, making the shape explicitly match input_ids 
         # return a tensor containing only the generated tokens
-        return torch.tensor(generated_tokens, dtype = torch.int)
+        return torch.tensor(generated_tokens, dtype = torch.int).unsqueeze(0)
+    # Since the function signature specifies a return type of Int[torch.Tensor, "batch out_seq_len"] (i.e., a 2D tensor with shape (batch, out_seq_len)), you need to modify it to return a tensor with shape (1, T) when batch size is 1. You can achieve this by unsqueezing the 0-th dimension:
                 
 
 
 
         # TODO:
-        raise NotImplementedError
+        # raise NotImplementedError
 
     def multi_head_decoding(
         self,
@@ -125,6 +126,35 @@ class MedusaTextGenerator:
             Returns:
                 tensor of shape (T,), where T <= self.max_output_len
         '''    
+        generated_tokens: List[int] = []
+        #Total number of heads: LM head(1) + S Medusa heads
+        total_heads = self.no_heads # use_no_medusa_heads + 1
+        # Continue generation until max_output_len tokens have been generated
+        while len(generated_tokens) < self.max_output_len:
+            with torch.no_grad():
+                # STEP 1: Forward pass to obtain the probability distributions for the LM head and medusa heads
+                outputs = self.model(input_ids)
+                # LM head: obtain logits for the last token
+                lm_logits = outputs.logits[:, -1 ,:] #shape: (1, vocab_size)
+                p_list = [lm_logits]
+                ##     !!!! Check this 
+                # For each medusa head (assumed stored in ouputs.medusa_logits, a list of tensors)
+                for k in range(total_heads - 1):
+                    # Get the logits for the kth medusa head 
+                    medusa_logits = outputs.medusa_logits[k][:, -1, :]
+                    # Append the logits to the list
+                    p_list.append(medusa_logits)
+
+            # Step 2: Beam search over the next S+1 tokens
+            # Initialize beam with one candidate: an empty list of new tokens and a score of 0.0
+            candidates: List[List[int]] = [[]]
+            scores: List[float] = [0.0]
+            # {p_t, p_t+1, ..., p_t+S} = p_list
+            # For each of the S+1 heads, extend the candidates 
+            for s in range(len(p_list)):
+                # compute log softmax for numerical stability
+                log_probs = torch.log_softmax
+
         # TODO:
-        raise NotImplementedError
+        # raise NotImplementedError
             
