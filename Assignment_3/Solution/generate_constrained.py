@@ -14,11 +14,29 @@ class TrieNode:
         self.is_end_of_word = False
 
 class TokenTrie:
-    def __init__(self, eos_token_id):
+    def __init__(
+            self, 
+            eos_token_id
+        ) -> None:
+        '''
+            Initialize the TokenTrie class.
+            eos_token_id: End-of-sequence token id 
+            Do not edit.
+        '''
         self.root = TrieNode()
         self.eos_token_id = eos_token_id
 
-    def insert(self, token_sequence):
+    def insert(
+            self, 
+            token_sequence
+        ) -> None:
+        '''
+            Inserts a token into the TokenTrie.
+            token_sequence: A list of tokens to be inserted as a sequence
+
+            This method traverses the trie and adds node for each token
+            It also marks the last token as end of word
+        '''
         node = self.root
         for token in token_sequence:
             if token not in node.children:
@@ -26,10 +44,28 @@ class TokenTrie:
             node = node.children[token]
         node.is_end_of_word = True  # Mark as complete word
 
-    def get_next_tokens(self, node):
+    def get_next_tokens(
+            self, 
+            node
+        ) -> None:
+        '''
+            Get the next possible tokens from a given node.
+            node: Current node in the Trie
+        '''
         return set(node.children.keys())
 
-    def is_complete_word(self, token_sequence):
+    def is_complete_word(
+            self, 
+            token_sequence
+        ) -> None:
+        '''
+            Check if a given token sequence forms a complete word in the Trie.
+            
+            token_sequence: A list of tokens to check.
+            
+            Returns True if the sequence forms a complete word in the Trie, 
+            otherwise returns False.
+        '''
         node = self.root
         for token in token_sequence:
             if token not in node.children:
@@ -39,12 +75,22 @@ class TokenTrie:
 
 class ConstrainedTextGenerator:
     def __init__(
-        self,
-        model: AutoModelForCausalLM,
-        tokenizer: AutoTokenizer,
-        eos_id: int,
+        self, 
+        model: AutoModelForCausalLM, 
+        tokenizer: AutoTokenizer, 
+        eos_id: int, 
         max_output_len: int = 10,
     ) -> None:
+        '''
+            Initialize the ConstrainedTextGenerator class.
+            
+            model: LLM
+            tokenizer: LLM's tokenizer.
+            eos_id: End-of-sequence token id 
+            max_output_len: Maximum number of tokens to be generated.
+            
+            Do not edit.
+        '''
         self.model = model
         self.tokenizer = tokenizer
         self.eos_token_id = eos_id
@@ -61,7 +107,27 @@ class ConstrainedTextGenerator:
         trie.insert([self.eos_token_id])  # Ensure EOS is in trie
         return trie
 
-    def __call__(self, input_ids: Int[torch.Tensor, "batch in_seq_len"], word_list: list) -> Int[torch.Tensor, "batch out_seq_len"]:
+    def __call__(
+        self, input_ids: Int[torch.Tensor, "batch in_seq_len"], word_list: list
+    ) -> Int[torch.Tensor, "batch out_seq_len"]:
+        '''
+            Implement Word-Constrained decoding technique. (refer assignment document for more details)
+            
+            `word_list`: contains bag of words for the particular example
+
+            - batch size is always 1; no need to handle generation of multiple sequences simultaneously.
+            - stop decoding when: 
+                - the end-of-sequence (EOS) token is generated `self.eos_token_id`
+                - the predefined maximum number of tokens is reached `self.max_output_len`
+            
+            Return an integer tensor containing only the generated tokens (excluding input tokens).
+            
+            Input:
+                input_ids: tensor of shape (1, P)
+            Returns:
+                tensor of shape (T,), where T <= self.max_output_len
+        '''    
+        # Build Trie and get the parent node
         trie = self._build_trie_from_word_list(word_list)
         current_trie_node = trie.root
 
