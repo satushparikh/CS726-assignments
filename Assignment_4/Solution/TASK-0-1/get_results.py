@@ -110,12 +110,12 @@ if __name__ == "__main__":
     # DO NOT MAKE ANY CHANGES ABOVE THIS LINE
     # Write your code for TASK 0 below
     # TASK 0: Initialize Model and load weights
-    DATASET_PATH = '/home/ironman/Desktop/CS726-assignments/Assignment_4/Solution/A4_test_data.pt'  # Path to the dataset file
-    MODEL_WEIGHTS_PATH = '/home/ironman/Desktop/CS726-assignments/Assignment_4/Solution/trained_model_weights.pth'  # Path to the model weights file
+    DATASET_PATH = '../A4_test_data.pt'  # Path to the dataset file
+    MODEL_WEIGHTS_PATH = '../trained_model_weights.pth'  # Path to the model weights file
     model = EnergyRegressor(FEAT_DIM)  # Initialize the model
     # Load the model weights
     try:
-        model.load_state_dict(torch.load(MODEL_WEIGHTS_PATH))
+        model.load_state_dict(torch.load(MODEL_WEIGHTS_PATH, map_location=torch.device('cpu')))
         print(f"Model weights loaded from {MODEL_WEIGHTS_PATH}")
     except FileNotFoundError:
         print(f"Error: Model weights file not found at {MODEL_WEIGHTS_PATH}")
