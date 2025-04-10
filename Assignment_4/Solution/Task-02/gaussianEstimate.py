@@ -67,10 +67,30 @@ def gaussian_process_predict(x_train, y_train, x_test, kernel_func, length_scale
     pass
 
 # Acquisition Functions (Simplified, no erf)
+def logistic_cdf(z):
+    """Compute the logistic CDF."""
+    # Approximate Phi(z) = 1 / (1 + exp(-1.702 * z))
+    return 1 / (1 + np.exp(-1.702 * z))
+
+def logistic_pdf(z):
+    """Derivative of the logistic CDF."""
+    exp_term = np.exp(-1.702 * z)
+    return 1.702 * exp_term / ((1.0 + exp_term)**2)
+
 def expected_improvement(mu, sigma, y_best, xi=0.01):
     """Compute Expected Improvement acquisition function."""
     # Approximate Phi(z) = 1 / (1 + exp(-1.702 * z))
-    pass
+    """ 
+    EI(x) = (mu(x) - y_best - xi) * Phi(z) + sigma(x) * phi(z)
+    where z = (mu(x) - y_best - xi) / sigma(x), Phi is the cumulative distribution function and phi is the probability density function
+    """
+    # ensure numerical stability
+    sigma = np.maximum(sigma, 1e-8)
+    # compute z
+    z = (mu - y_best - xi) / sigma
+    ei = (mu - y_best - xi) * logistic_cdf(z) + sigma * logistic_pdf(z)
+    ei[sigma < 1e-8] = 0
+    return ei
 
 def probability_of_improvement(mu, sigma, y_best, xi=0.01):
     """Compute Probability of Improvement acquisition function."""
@@ -78,8 +98,8 @@ def probability_of_improvement(mu, sigma, y_best, xi=0.01):
     with np.errstate(divide='ignore',invalid='ignore'):
         # numpy context manager to ignore divide by zero and invalid values
         z = (mu - y_best - xi) / sigma 
-        phi_approx = 1 / (1 + np.exp(-1.702*z))
-        # where sigma is close to 0, manually set probability of improvement to 0 or 1 
+        phi_approx = logistic_cdf(z)
+        # where sigma is close to 0, manually set probability of improvement to 0 or 1 pl
         phi_approx = np.where(sigma < 1e-8, (mu > y_best +xi).astype(float), phi_approx)
     pass
 
