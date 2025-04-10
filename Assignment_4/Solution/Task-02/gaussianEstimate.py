@@ -3,20 +3,56 @@ import matplotlib.pyplot as plt
 
 def branin_hoo(x):
     """Calculate the Branin-Hoo function value for given input."""
-    
+    x = np.atleast_2d(x)
+    x1, x2 = x[:, 0], x[:, 1]
+
+    a = 1
+    b = 5.1 / (4 * np.pi**2)
+    c = 5 / np.pi
+    r = 6
+    s = 10
+    t = 1 / (8 * np.pi)
+
+    return a * (x2 - b * x1**2 + c * x1 - r)**2 + s * (1 - t) * np.cos(x1) + s
 
 # Kernel Functions (Students implement)
 def rbf_kernel(x1, x2, length_scale=1.0, sigma_f=1.0):
     """Compute the RBF kernel."""
-    pass
+    # Compute the squared Euclidean distance between x1 and x2
+    sqdist = np.sum(x1**2, 1).reshape(-1,1) + np.sum(x2**2, 1) - 2*np.dot(x1, x2.T)
+    # Compute the RBF kernel
+    k = sigma_f**2 * np.exp(-0.5 * sqdist / length_scale**2)
+    return k
 
 def matern_kernel(x1, x2, length_scale=1.0, sigma_f=1.0, nu=1.5):
     """Compute the Matérn kernel (nu=1.5)."""
-    pass
+    """Compute the Matérn kernel (ν=1.5) between two sets of input points."""
+    # Ensure input arrays are 2D
+    x1 = np.atleast_2d(x1)
+    x2 = np.atleast_2d(x2)
+
+    # Compute pairwise Euclidean distances
+    sqdist = np.sum(x1**2, axis=1).reshape(-1, 1) +  np.sum(x2**2, axis=1) - 2 * np.dot(x1, x2.T)
+    dists = np.sqrt(np.maximum(sqdist, 1e-12))  # Numerical stability
+
+    sqrt3 = np.sqrt(3)
+    scaled_dist = sqrt3 * dists / length_scale
+
+    k = sigma_f**2 * (1 + scaled_dist) * np.exp(-scaled_dist)
+    return k
 
 def rational_quadratic_kernel(x1, x2, length_scale=1.0, sigma_f=1.0, alpha=1.0):
     """Compute the Rational Quadratic kernel."""
-    pass
+    x1 = np.atleast_2d(x1)
+    x2 = np.atleast_2d(x2)
+    
+    # Squared Euclidean distance
+    sqdist = np.sum(x1**2, 1).reshape(-1, 1) + np.sum(x2**2, 1) - 2 * np.dot(x1, x2.T)
+    
+    # Rational Quadratic kernel
+    k = sigma_f**2 * (1 + sqdist / (2 * alpha * length_scale**2)) ** (-alpha)
+    
+    return k
 
 def log_marginal_likelihood(x_train, y_train, kernel_func, length_scale, sigma_f, noise=1e-4):
     """Compute the log-marginal likelihood."""
