@@ -75,6 +75,12 @@ def expected_improvement(mu, sigma, y_best, xi=0.01):
 def probability_of_improvement(mu, sigma, y_best, xi=0.01):
     """Compute Probability of Improvement acquisition function."""
     # Approximate Phi(z) = 1 / (1 + exp(-1.702 * z))
+    with np.errstate(divide='ignore',invalid='ignore'):
+        # numpy context manager to ignore divide by zero and invalid values
+        z = (mu - y_best - xi) / sigma 
+        phi_approx = 1 / (1 + np.exp(-1.702*z))
+        # where sigma is close to 0, manually set probability of improvement to 0 or 1 
+        phi_approx = np.where(sigma < 1e-8, (mu > y_best +xi).astype(float), phi_approx)
     pass
 
 def plot_graph(x1_grid, x2_grid, z_values, x_train, title, filename):
