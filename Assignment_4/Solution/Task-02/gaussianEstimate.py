@@ -59,11 +59,12 @@ def log_marginal_likelihood(x_train, y_train, kernel_func, length_scale, sigma_f
     pass
 
 def optimize_hyperparameters(x_train, y_train, kernel_func, noise=1e-4):
-    """Optimize hyperparameters using grid search."""
+    """Optimize hyperparameters using grid search."""    
     pass
 
 def gaussian_process_predict(x_train, y_train, x_test, kernel_func, length_scale=1.0, sigma_f=1.0, noise=1e-4):
     """Perform GP prediction."""
+
     pass
 
 # Acquisition Functions (Simplified, no erf)
