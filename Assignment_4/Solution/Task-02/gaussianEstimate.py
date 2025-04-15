@@ -224,8 +224,18 @@ def main():
     # Create a directory for plots if it doesn't exist
     current_dir = os.path.dirname(os.path.abspath(__file__))
     plot_dir = os.path.join(current_dir, 'gp_plots')
-    print(f"Creating plots directory at: {plot_dir}")
-    os.makedirs(plot_dir, exist_ok=True)
+    
+    # Check if directory exists, if not create it
+    if not os.path.exists(plot_dir):
+        print(f"Plot directory does not exist. Creating directory at: {plot_dir}")
+        try:
+            os.makedirs(plot_dir)
+            print("Directory created successfully!")
+        except Exception as e:
+            print(f"Error creating directory: {e}")
+            return
+    else:
+        print(f"Plot directory already exists at: {plot_dir}")
     
     np.random.seed(0)
     n_samples_list = [10, 20, 50, 100]
@@ -278,22 +288,28 @@ def main():
                 mean_path = os.path.join(plot_dir, f'gp_mean_{kernel_name}_n{n_samples}_{acq_name}.png')
                 std_path = os.path.join(plot_dir, f'gp_std_{kernel_name}_n{n_samples}_{acq_name}.png')
                 
-                print(f"Saving plots to:")
-                print(f"True function: {true_function_path}")
+                print(f"\nSaving plots for {kernel_label} with {n_samples} samples and {acq_name}:")
+                # print(f"True function: {true_function_path}")
                 print(f"Mean: {mean_path}")
                 print(f"Std: {std_path}")
                 
-                plot_graph(x1_grid, x2_grid, true_values, x_train_current,
-                          f'True Branin-Hoo Function (n={n_samples}, Kernel={kernel_label}{acq_label})',
-                          true_function_path)
-                
-                plot_graph(x1_grid, x2_grid, y_mean_grid, x_train_current,
-                          f'GP Predicted Mean (n={n_samples}, Kernel={kernel_label}{acq_label})',
-                          mean_path)
-                
-                plot_graph(x1_grid, x2_grid, y_std_grid, x_train_current,
-                          f'GP Predicted Std Dev (n={n_samples}, Kernel={kernel_label}{acq_label})',
-                          std_path)
+                try:
+                    plot_graph(x1_grid, x2_grid, true_values, x_train_current,
+                              f'True Branin-Hoo Function (n={n_samples}, Kernel={kernel_label}{acq_label})',
+                              true_function_path)
+                    # print("✓ True function plot saved")
+                    
+                    plot_graph(x1_grid, x2_grid, y_mean_grid, x_train_current,
+                              f'GP Predicted Mean (n={n_samples}, Kernel={kernel_label}{acq_label})',
+                              mean_path)
+                    # print("✓ Mean plot saved")
+                    
+                    plot_graph(x1_grid, x2_grid, y_std_grid, x_train_current,
+                              f'GP Predicted Std Dev (n={n_samples}, Kernel={kernel_label}{acq_label})',
+                              std_path)
+                    # print("✓ Std plot saved")
+                except Exception as e:
+                    print(f"Error saving plots: {e}")
 
 if __name__ == "__main__":
     main()
