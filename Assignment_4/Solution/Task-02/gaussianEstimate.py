@@ -1,11 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 
 def branin_hoo(x):
     """Calculate the Branin-Hoo function value for given input."""
     x = np.atleast_2d(x)
     x1, x2 = x[:, 0], x[:, 1]
-
     a = 1
     b = 5.1 / (4 * np.pi**2)
     c = 5 / np.pi
@@ -56,27 +56,121 @@ def rational_quadratic_kernel(x1, x2, length_scale=1.0, sigma_f=1.0, alpha=1.0):
 
 def log_marginal_likelihood(x_train, y_train, kernel_func, length_scale, sigma_f, noise=1e-4):
     """Compute the log-marginal likelihood."""
-    pass
+    # Compute the kernel matrix
+    K = kernel_func(x_train, x_train, length_scale, sigma_f)
+    
+    # Add noise to the diagonal
+    K += noise * np.eye(len(x_train))
+    
+    # Compute the log determinant term K=LL^T
+    L = np.linalg.cholesky(K)
+    log_det = 2 * np.sum(np.log(np.diag(L))) # log|K|=log|L|+log|L^T|=2log|L|. L is lower triangular matrix
+    
+    # Compute the quadratic term
+    alpha = np.linalg.solve(L.T, np.linalg.solve(L, y_train))
+    quadratic_term = y_train.T @ alpha
+    
+    # p(y|X,theta)=N(y|0,K(X,X)+sigma^2I)
+    # log p(y|X,theta)=-0.5*(y^T(K(X,X)+sigma^2I)^-1y+log|K(X,X)+sigma^2I|+n*log(2*pi))
+    # Compute the log marginal likelihood
+    log_likelihood = -0.5 * (quadratic_term + log_det + len(x_train) * np.log(2 * np.pi))
+    
+    return log_likelihood
 
 def optimize_hyperparameters(x_train, y_train, kernel_func, noise=1e-4):
     """Optimize hyperparameters using grid search."""    
-    pass
+    # Define the grid of hyperparameters to search
+    length_scales = np.logspace(-2, 2, 20)
+    sigma_fs = np.logspace(-2, 2, 20)
+    
+    best_log_likelihood = -np.inf
+    best_length_scale = 1.0
+    best_sigma_f = 1.0
+    
+    # Grid search over hyperparameters
+    for length_scale in length_scales:
+        for sigma_f in sigma_fs:
+            # Compute log marginal likelihood for current hyperparameters
+            log_likelihood = log_marginal_likelihood(x_train, y_train, kernel_func, 
+                                                   length_scale, sigma_f, noise)
+            
+            # Update best hyperparameters if current ones are better
+            if log_likelihood > best_log_likelihood:
+                best_log_likelihood = log_likelihood
+                best_length_scale = length_scale
+                best_sigma_f = sigma_f
+    
+    return best_length_scale, best_sigma_f, noise
 
 def gaussian_process_predict(x_train, y_train, x_test, kernel_func, length_scale=1.0, sigma_f=1.0, noise=1e-4):
     """Perform GP prediction."""
-
-    pass
+    """
+    Perform Gaussian Process prediction for the test points x_test given the training points x_train and their corresponding values y_train.
+    """
+    # Compute kernel matrices
+    # Compute the Kernel matrix of training inputs n*n
+    K = kernel_func(x_train, x_train, length_scale, sigma_f) + noise * np.eye(len(x_train))
+    # Compute the Kernel matrix of training inputs and test inputs n*m
+    K_star = kernel_func(x_train, x_test, length_scale, sigma_f) 
+    # Compute the Kernel matrix of test inputs m*m
+    K_star_star = kernel_func(x_test, x_test, length_scale, sigma_f) + noise * np.eye(len(x_test))
+    
+    try:
+        # Compute Cholesky decomposition with error handling
+        L = np.linalg.cholesky(K)
+    except np.linalg.LinAlgError:
+        # If Cholesky fails, add more noise to diagonal
+        K += 1e-6 * np.eye(len(x_train))
+        L = np.linalg.cholesky(K)
+    
+    # Solving for alpha = K^-1 @ y using Cholesky decomposition
+    alpha = np.linalg.solve(L.T, np.linalg.solve(L, y_train))
+    
+    # Compute predictive mean with error handling
+    with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+        mu = K_star.T @ alpha
+        # Clip extreme values
+        mu = np.clip(mu, -1e10, 1e10)
+    
+    # Compute predictive variance
+    # predictive variance = K_star_star - K_star^T @ K^-1 @ K_star
+    v = np.linalg.solve(L, K_star)
+    var = K_star_star - v.T @ v
+    
+    # Ensure numerical stability
+    var = np.maximum(var, 0)
+    
+    return mu, np.sqrt(np.diag(var))
 
 # Acquisition Functions (Simplified, no erf)
 def logistic_cdf(z):
     """Compute the logistic CDF."""
     # Approximate Phi(z) = 1 / (1 + exp(-1.702 * z))
+    z = np.asarray(z)
+    # clip z to avoid overflow
+    z = np.clip(z, -10 / 1.702, 10 / 1.702)
     return 1 / (1 + np.exp(-1.702 * z))
 
+
 def logistic_pdf(z):
-    """Derivative of the logistic CDF."""
-    exp_term = np.exp(-1.702 * z)
-    return 1.702 * exp_term / ((1.0 + exp_term)**2)
+    """Stable approximation of logistic PDF."""
+    a = 1.702
+    z = np.asarray(z)
+
+    # Check if z is too large or too small (i.e., would cause overflow)
+    # if np.any(z > 10 / a) or np.any(z < -10 / a):
+        # raise AssertionError(f"Overflow risk: z values are out of safe bounds (z={z})")
+
+    # Clip z to avoid overflow in further calculations
+    z = np.clip(z, -10 / a, 10 / a)  # Or a tighter bound like [-300/a, 300/a]
+
+    exp_term = np.where(
+        z >= 0,
+        np.exp(-a * z),
+        1.0 / np.exp(a * z)
+    )
+
+    return a * exp_term / ((1.0 + exp_term)**2)
 
 def expected_improvement(mu, sigma, y_best, xi=0.01):
     """Compute Expected Improvement acquisition function."""
@@ -88,8 +182,8 @@ def expected_improvement(mu, sigma, y_best, xi=0.01):
     # ensure numerical stability
     sigma = np.maximum(sigma, 1e-8)
     # compute z
-    z = (mu - y_best - xi) / sigma
-    ei = (mu - y_best - xi) * logistic_cdf(z) + sigma * logistic_pdf(z)
+    z = (mu - y_best - xi) / sigma[:, np.newaxis]
+    ei = (mu - y_best - xi) * logistic_cdf(z) + sigma[:, np.newaxis] * logistic_pdf(z)
     ei[sigma < 1e-8] = 0
     return ei
 
@@ -98,18 +192,41 @@ def probability_of_improvement(mu, sigma, y_best, xi=0.01):
     # Approximate Phi(z) = 1 / (1 + exp(-1.702 * z))
     with np.errstate(divide='ignore',invalid='ignore'):
         # numpy context manager to ignore divide by zero and invalid values
-        z = (mu - y_best - xi) / sigma 
+        z = (mu - y_best - xi) / sigma[:, np.newaxis]
         phi_approx = logistic_cdf(z)
         # where sigma is close to 0, manually set probability of improvement to 0 or 1 pl
-        phi_approx = np.where(sigma < 1e-8, (mu > y_best +xi).astype(float), phi_approx)
-    pass
+        phi_approx = np.where(sigma[:, np.newaxis] < 1e-8, (mu > y_best +xi).astype(float), phi_approx)
+    return phi_approx
 
 def plot_graph(x1_grid, x2_grid, z_values, x_train, title, filename):
     """Create and save a contour plot."""
+    plt.figure(figsize=(10, 8))
     
+    # Create contour plot
+    contour = plt.contourf(x1_grid, x2_grid, z_values, levels=20, cmap='viridis')
+    plt.colorbar(contour, label='Function Value')
+    
+    # Plot training points
+    plt.scatter(x_train[:, 0], x_train[:, 1], c='red', marker='x', s=100, label='Training Points')
+    
+    # Add labels and title
+    plt.xlabel('x1')
+    plt.ylabel('x2')
+    plt.title(title)
+    plt.legend()
+    
+    # Save the plot
+    plt.savefig(filename)
+    plt.close()
 
 def main():
     """Main function to run GP with kernels, sample sizes, and acquisition functions."""
+    # Create a directory for plots if it doesn't exist
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    plot_dir = os.path.join(current_dir, 'gp_plots')
+    print(f"Creating plots directory at: {plot_dir}")
+    os.makedirs(plot_dir, exist_ok=True)
+    
     np.random.seed(0)
     n_samples_list = [10, 20, 50, 100]
     kernels = {
@@ -146,19 +263,37 @@ def main():
                 y_std_grid = y_std.reshape(x1_grid.shape)
                 
                 if acq_func is not None:
-                    # Hint: Find y_best, apply acq_func, select new point, update training set, recompute GP
-                    pass
+                    y_best = np.max(y_train_current)
+                    acq_values = acq_func(y_mean, y_std, y_best)
+                    x_new = x_test[np.argmax(acq_values)]
+                    x_train_current = np.vstack([x_train_current, x_new])
+                    y_train_current = np.vstack([y_train_current, branin_hoo(x_new)])
+                    y_mean, y_std = gaussian_process_predict(x_train_current, y_train_current, x_test, 
+                                                        kernel_func, length_scale, sigma_f, noise)
                 
                 acq_label = '' if acq_name == 'None' else f', Acq={acq_name}'
+                
+                # Save plots in the plot_dir directory
+                true_function_path = os.path.join(plot_dir, f'true_function_{kernel_name}_n{n_samples}_{acq_name}.png')
+                mean_path = os.path.join(plot_dir, f'gp_mean_{kernel_name}_n{n_samples}_{acq_name}.png')
+                std_path = os.path.join(plot_dir, f'gp_std_{kernel_name}_n{n_samples}_{acq_name}.png')
+                
+                print(f"Saving plots to:")
+                print(f"True function: {true_function_path}")
+                print(f"Mean: {mean_path}")
+                print(f"Std: {std_path}")
+                
                 plot_graph(x1_grid, x2_grid, true_values, x_train_current,
                           f'True Branin-Hoo Function (n={n_samples}, Kernel={kernel_label}{acq_label})',
-                          f'true_function_{kernel_name}_n{n_samples}_{acq_name}.png')
+                          true_function_path)
+                
                 plot_graph(x1_grid, x2_grid, y_mean_grid, x_train_current,
                           f'GP Predicted Mean (n={n_samples}, Kernel={kernel_label}{acq_label})',
-                          f'gp_mean_{kernel_name}_n{n_samples}_{acq_name}.png')
+                          mean_path)
+                
                 plot_graph(x1_grid, x2_grid, y_std_grid, x_train_current,
                           f'GP Predicted Std Dev (n={n_samples}, Kernel={kernel_label}{acq_label})',
-                          f'gp_std_{kernel_name}_n{n_samples}_{acq_name}.png')
+                          std_path)
 
 if __name__ == "__main__":
     main()
