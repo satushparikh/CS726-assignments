@@ -198,6 +198,12 @@ def probability_of_improvement(mu, sigma, y_best, xi=0.01):
         phi_approx = np.where(sigma[:, np.newaxis] < 1e-8, (mu > y_best +xi).astype(float), phi_approx)
     return phi_approx
 
+def random_acquisition(x_test):
+    """Random acquisition strategy - randomly selects next point from input domain."""
+    # Randomly select an index from the test points
+    idx = np.random.randint(0, len(x_test))
+    return x_test[idx]
+
 def plot_graph(x1_grid, x2_grid, true_values, y_mean_grid, y_std_grid, x_train, title, filename):
     """Create and save a figure with three subplots."""
     plt.figure(figsize=(15, 5))
@@ -320,7 +326,8 @@ def main():
     }
     acquisition_strategies = {
         'EI': expected_improvement,
-        'PI': probability_of_improvement
+        'PI': probability_of_improvement,
+        'Random': None  # Random acquisition doesn't need a function
     }
     
     x1_test = np.linspace(-5, 10, 100)
@@ -349,10 +356,16 @@ def main():
                 y_mean_grid = y_mean.reshape(x1_grid.shape)
                 y_std_grid = y_std.reshape(x1_grid.shape)
                 
-                if acq_func is not None:
+                if acq_name == 'Random':
+                    # For random acquisition, just pick a random point
+                    x_new = random_acquisition(x_test)
+                elif acq_func is not None:
+                    # For other acquisition functions, use their logic
                     y_best = np.max(y_train_current)
                     acq_values = acq_func(y_mean, y_std, y_best)
                     x_new = x_test[np.argmax(acq_values)]
+                
+                if acq_name != 'None':  # Only add new point if we're using an acquisition strategy
                     x_train_current = np.vstack([x_train_current, x_new])
                     y_train_current = np.vstack([y_train_current, branin_hoo(x_new)])
                     y_mean, y_std = gaussian_process_predict(x_train_current, y_train_current, x_test, 
