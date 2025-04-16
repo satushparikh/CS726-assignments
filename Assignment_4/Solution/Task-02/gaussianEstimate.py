@@ -198,25 +198,99 @@ def probability_of_improvement(mu, sigma, y_best, xi=0.01):
         phi_approx = np.where(sigma[:, np.newaxis] < 1e-8, (mu > y_best +xi).astype(float), phi_approx)
     return phi_approx
 
-def plot_graph(x1_grid, x2_grid, z_values, x_train, title, filename):
-    """Create and save a contour plot."""
-    plt.figure(figsize=(10, 8))
+def plot_graph(x1_grid, x2_grid, true_values, y_mean_grid, y_std_grid, x_train, title, filename):
+    """Create and save a figure with three subplots."""
+    plt.figure(figsize=(15, 5))
     
-    # Create contour plot
-    contour = plt.contourf(x1_grid, x2_grid, z_values, levels=20, cmap='viridis')
-    plt.colorbar(contour, label='Function Value')
-    
-    # Plot training points
+    # First subplot: True Branin-Hoo function
+    plt.subplot(131)
+    contour1 = plt.contourf(x1_grid, x2_grid, true_values, levels=20, cmap='viridis')
+    plt.colorbar(contour1, label='Function Value')
     plt.scatter(x_train[:, 0], x_train[:, 1], c='red', marker='x', s=100, label='Training Points')
-    
-    # Add labels and title
     plt.xlabel('x1')
     plt.ylabel('x2')
-    plt.title(title)
+    plt.title('True Branin-Hoo Function')
     plt.legend()
     
+    # Second subplot: GP Predicted Mean
+    plt.subplot(132)
+    contour2 = plt.contourf(x1_grid, x2_grid, y_mean_grid, levels=20, cmap='viridis')
+    plt.colorbar(contour2, label='Function Value')
+    plt.scatter(x_train[:, 0], x_train[:, 1], c='red', marker='x', s=100, label='Training Points')
+    plt.xlabel('x1')
+    plt.ylabel('x2')
+    plt.title('GP Predicted Mean')
+    plt.legend()
+    
+    # Third subplot: GP Predicted Std Dev
+    plt.subplot(133)
+    contour3 = plt.contourf(x1_grid, x2_grid, y_std_grid, levels=20, cmap='viridis')
+    plt.colorbar(contour3, label='Standard Deviation')
+    plt.scatter(x_train[:, 0], x_train[:, 1], c='red', marker='x', s=100, label='Training Points')
+    plt.xlabel('x1')
+    plt.ylabel('x2')
+    plt.title('GP Predicted Uncertainty')
+    plt.legend()
+    
+    # Add main title
+    plt.suptitle(title, y=1.05)
+    
+    # Adjust layout
+    plt.tight_layout()
+    
     # Save the plot
-    plt.savefig(filename)
+    plt.savefig(filename, bbox_inches='tight', dpi=300)
+    plt.close()
+
+def plot_progression(x1_grid, x2_grid, true_values, all_results, kernel_label, acq_name, filename):
+    """Create a figure showing progression of GP predictions for different sample sizes."""
+    n_samples_list = list(all_results.keys())
+    n_rows = len(n_samples_list)
+    
+    plt.figure(figsize=(15, 5*n_rows))
+    
+    for i, n_samples in enumerate(n_samples_list):
+        y_mean_grid, y_std_grid, x_train = all_results[n_samples]
+        
+        # First subplot: True Branin-Hoo function (only for first row)
+        if i == 0:
+            plt.subplot(n_rows, 3, 1)
+            contour1 = plt.contourf(x1_grid, x2_grid, true_values, levels=20, cmap='viridis')
+            plt.colorbar(contour1, label='Function Value')
+            plt.scatter(x_train[:, 0], x_train[:, 1], c='red', marker='x', s=100, label='Training Points')
+            plt.xlabel('x1')
+            plt.ylabel('x2')
+            plt.title('True Branin-Hoo Function')
+            plt.legend()
+        
+        # Second subplot: GP Predicted Mean
+        plt.subplot(n_rows, 3, 3*i + 2)
+        contour2 = plt.contourf(x1_grid, x2_grid, y_mean_grid, levels=20, cmap='viridis')
+        plt.colorbar(contour2, label='Function Value')
+        plt.scatter(x_train[:, 0], x_train[:, 1], c='red', marker='x', s=100, label='Training Points')
+        plt.xlabel('x1')
+        plt.ylabel('x2')
+        plt.title(f'GP Predicted Mean (n={n_samples})')
+        plt.legend()
+        
+        # Third subplot: GP Predicted Std Dev
+        plt.subplot(n_rows, 3, 3*i + 3)
+        contour3 = plt.contourf(x1_grid, x2_grid, y_std_grid, levels=20, cmap='viridis')
+        plt.colorbar(contour3, label='Standard Deviation')
+        plt.scatter(x_train[:, 0], x_train[:, 1], c='red', marker='x', s=100, label='Training Points')
+        plt.xlabel('x1')
+        plt.ylabel('x2')
+        plt.title(f'GP Predicted Uncertainty (n={n_samples})')
+        plt.legend()
+    
+    # Add main title
+    plt.suptitle(f'GP Results Progression (Kernel={kernel_label}, Acq={acq_name})', y=1.05)
+    
+    # Adjust layout
+    plt.tight_layout()
+    
+    # Save the plot
+    plt.savefig(filename, bbox_inches='tight', dpi=300)
     plt.close()
 
 def main():
@@ -256,14 +330,17 @@ def main():
     true_values = np.array([branin_hoo([x1, x2]) for x1, x2 in x_test]).reshape(x1_grid.shape)
     
     for kernel_name, (kernel_func, kernel_label) in kernels.items():
-        for n_samples in n_samples_list:
-            x_train = np.random.uniform(low=[-5, 0], high=[10, 15], size=(n_samples, 2))
-            y_train = np.array([branin_hoo(x) for x in x_train])
+        for acq_name, acq_func in acquisition_strategies.items():
+            # Store results for all sample sizes
+            all_results = {}
             
-            print(f"\nKernel: {kernel_label}, n_samples = {n_samples}")
-            length_scale, sigma_f, noise = optimize_hyperparameters(x_train, y_train, kernel_func)
-            
-            for acq_name, acq_func in acquisition_strategies.items():
+            for n_samples in n_samples_list:
+                x_train = np.random.uniform(low=[-5, 0], high=[10, 15], size=(n_samples, 2))
+                y_train = np.array([branin_hoo(x) for x in x_train])
+                
+                print(f"\nKernel: {kernel_label}, n_samples = {n_samples}")
+                length_scale, sigma_f, noise = optimize_hyperparameters(x_train, y_train, kernel_func)
+                
                 x_train_current = x_train.copy()
                 y_train_current = y_train.copy()
                 
@@ -281,35 +358,18 @@ def main():
                     y_mean, y_std = gaussian_process_predict(x_train_current, y_train_current, x_test, 
                                                         kernel_func, length_scale, sigma_f, noise)
                 
-                acq_label = '' if acq_name == 'None' else f', Acq={acq_name}'
-                
-                # Save plots in the plot_dir directory
-                true_function_path = os.path.join(plot_dir, f'true_function_{kernel_name}_n{n_samples}_{acq_name}.png')
-                mean_path = os.path.join(plot_dir, f'gp_mean_{kernel_name}_n{n_samples}_{acq_name}.png')
-                std_path = os.path.join(plot_dir, f'gp_std_{kernel_name}_n{n_samples}_{acq_name}.png')
-                
-                print(f"\nSaving plots for {kernel_label} with {n_samples} samples and {acq_name}:")
-                # print(f"True function: {true_function_path}")
-                print(f"Mean: {mean_path}")
-                print(f"Std: {std_path}")
-                
-                try:
-                    plot_graph(x1_grid, x2_grid, true_values, x_train_current,
-                              f'True Branin-Hoo Function (n={n_samples}, Kernel={kernel_label}{acq_label})',
-                              true_function_path)
-                    # print("✓ True function plot saved")
-                    
-                    plot_graph(x1_grid, x2_grid, y_mean_grid, x_train_current,
-                              f'GP Predicted Mean (n={n_samples}, Kernel={kernel_label}{acq_label})',
-                              mean_path)
-                    # print("✓ Mean plot saved")
-                    
-                    plot_graph(x1_grid, x2_grid, y_std_grid, x_train_current,
-                              f'GP Predicted Std Dev (n={n_samples}, Kernel={kernel_label}{acq_label})',
-                              std_path)
-                    # print("✓ Std plot saved")
-                except Exception as e:
-                    print(f"Error saving plots: {e}")
+                # Store results for this sample size
+                all_results[n_samples] = (y_mean_grid, y_std_grid, x_train_current)
+            
+            # Create progression plot for this kernel and acquisition function
+            progression_path = os.path.join(plot_dir, f'progression_{kernel_name}_{acq_name}.png')
+            print(f"\nSaving progression plot for {kernel_label} with {acq_name}:")
+            print(f"Progression plot: {progression_path}")
+            
+            try:
+                plot_progression(x1_grid, x2_grid, true_values, all_results, kernel_label, acq_name, progression_path)
+            except Exception as e:
+                print(f"Error saving progression plot: {e}")
 
 if __name__ == "__main__":
     main()
