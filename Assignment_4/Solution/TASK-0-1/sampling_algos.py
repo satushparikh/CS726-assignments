@@ -36,6 +36,10 @@ class Algo1_Sampler:
     def sample(self, x0):
         samples = []
         x = x0.to(self.device)
+
+        # Measure burn-in time
+        burn_in_start_time = time.time()
+
         for t in range(self.num_samples):
             x.requires_grad = True
             # Compute gradient of E(X)
@@ -66,8 +70,11 @@ class Algo1_Sampler:
                 x = x_prime.detach()
             samples.append(x.cpu().detach().numpy())
 
+            if t == self.burn_in - 1:
+                burn_in_time = time.time() - burn_in_start_time
+
         # Discard burn-in samples
-        return np.array(samples[self.burn_in:])
+        return np.array(samples[self.burn_in:]), burn_in_time
 
 ##################################################
 # Algo 2: Unadjusted Langevin Algorithm (ULA)
@@ -82,6 +89,10 @@ class Algo2_Sampler:
     def sample(self, x0):
         samples = []
         x = x0.to(self.device)
+
+        # Measure burn-in time
+        burn_in_start_time = time.time()
+
         for t in range(self.num_samples):
             x = x.detach()  # Detach x from the computation graph
             x.requires_grad = True  # Enable gradient computation for x
@@ -97,8 +108,11 @@ class Algo2_Sampler:
             x = x - (self.tau / 2) * grad + torch.sqrt(torch.tensor(self.tau)) * noise
             samples.append(x.cpu().detach().numpy())
 
+            if t == self.burn_in - 1:
+                burn_in_start_time = time.time() - burn_in_start_time
+
         # Discard burn-in samples
-        return np.array(samples[self.burn_in:])
+        return np.array(samples[self.burn_in:]), burn_in_start_time
     
 
 ##################################################
@@ -115,6 +129,9 @@ class Algo3_HMC_Sampler:
     def sample(self, x0):
         samples = []
         x = x0.to(self.device)
+
+        # Measure burn-in time
+        burn_in_start_time = time.time()
 
         for t in range(self.num_samples):
             p = torch.randn_like(x)
@@ -146,7 +163,10 @@ class Algo3_HMC_Sampler:
                 x = x_new.detach()
             samples.append(x.cpu().detach().numpy())
 
-        return np.array(samples[self.burn_in:])
+            if t == self.burn_in - 1:
+                burn_in_time = time.time() - burn_in_start_time
+
+        return np.array(samples[self.burn_in:]), burn_in_time
 
 ##################################################
 # Main Execution
@@ -163,23 +183,20 @@ if __name__ == "__main__":
 
     # Algo 1
     algo1 = Algo1_Sampler(model, tau, burn_in, num_samples, DEVICE)
-    start_time = time.time()
-    samples_algo1 = algo1.sample(x0)
-    print(f"Algo-1 Time: {time.time() - start_time:.2f}s")
+    samples_algo1, burn_in_time_algo1 = algo1.sample(x0)
+    print(f"Algo-1 Time: {burn_in_time_algo1:.2f}s")
 
     # Algo 2
     algo2 = Algo2_Sampler(model, tau, burn_in, num_samples, DEVICE)
-    start_time = time.time()
-    samples_algo2 = algo2.sample(x0)
-    print(f"Algo-2 Time: {time.time() - start_time:.2f}s")
+    samples_algo2, burn_in_time_algo2 = algo2.sample(x0)
+    print(f"Algo-2 Time: {burn_in_time_algo2:.2f}s")
 
     # Algo 3 (HMC)
     epsilon = 0.05  # Leapfrog step size
     L = 10          # Number of leapfrog steps
     algo3 = Algo3_HMC_Sampler(model, epsilon, L, burn_in, num_samples, DEVICE)
-    start_time = time.time()
-    samples_algo3 = algo3.sample(x0)
-    print(f"Algo-3 (HMC) Time: {time.time() - start_time:.2f}s")
+    samples_algo3, burn_in_time_algo3 = algo3.sample(x0)
+    print(f"Algo-3 (HMC) Time: {burn_in_time_algo1:.2f}s")
 
     # Save all samples
     np.save(os.path.join(OUTPUT_PATH, "samples_algo1.npy"), samples_algo1)
