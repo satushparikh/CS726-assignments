@@ -2,6 +2,8 @@
 
 Medusa introduces a novel approach to accelerate autoregressive language models by leveraging **speculative parallel decoding**. Unlike traditional models that generate text token by token, Medusa generates multiple tokens in parallel using specialized heads, significantly improving speed while maintaining reasonable accuracy. This is especially useful in latency-sensitive applications like real-time translation and conversational AI.
 
+**Paper:** this branch implements decoding from [Medusa: Simple LLM Inference Acceleration Framework with Multiple Decoding Heads](https://arxiv.org/abs/2401.10774) (Cai et al., 2024). Official code: [FasterDecoding/Medusa](https://github.com/FasterDecoding/Medusa).
+
 ---
 
 ## 🧠 Understanding Medusa: Parallel Decoding for LLMs
@@ -15,6 +17,11 @@ This significantly reduces latency — ideal for real-time applications like tra
 ---
 
 ## 🏗️ Medusa Architecture
+
+<p align="center">
+  <img src="assets/medusa_pipeline.jpg" alt="Medusa architecture: extra decoding heads on the last hidden state propose top-k tokens for the next positions, and candidates are verified in a single step" width="70%">
+</p>
+<p align="center"><sub>Architecture figure from <a href="https://arxiv.org/abs/2401.10774">Cai et al., 2024</a>, via <a href="https://github.com/FasterDecoding/Medusa">FasterDecoding/Medusa</a> (Apache-2.0).</sub></p>
 
 Medusa enhances standard Transformer models with:
 
@@ -142,3 +149,14 @@ Medusa decoding presents a promising technique for accelerating large language m
 This technique is particularly beneficial for latency-sensitive applications, such as machine translation and dialogue systems, where fast response times outweigh minor reductions in output fidelity.
 
 ---
+
+## 📚 Reference
+
+```bibtex
+@article{cai2024medusa,
+  title   = {Medusa: Simple LLM Inference Acceleration Framework with Multiple Decoding Heads},
+  author  = {Tianle Cai and Yuhong Li and Zhengyang Geng and Hongwu Peng and Jason D. Lee and Deming Chen and Tri Dao},
+  year    = {2024},
+  journal = {arXiv preprint arXiv: 2401.10774}
+}
+```
